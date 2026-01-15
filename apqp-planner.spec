@@ -83,8 +83,8 @@ app = BUNDLE(
     info_plist={
         'CFBundleName': 'APQP计划生成器-Web版',
         'CFBundleDisplayName': 'APQP计划生成器-Web版',
-        'CFBundleVersion': '2.0.0',
-        'CFBundleShortVersionString': '2.0.0',
+        'CFBundleVersion': '2.1.0',
+        'CFBundleShortVersionString': '2.1.0',
         'NSHighResolutionCapable': True,
     },
 )

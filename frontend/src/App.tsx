@@ -163,7 +163,7 @@ function App() {
     <div className="min-h-screen bg-gray-100">
       {/* 顶部标题栏 */}
       <header className="bg-primary text-white py-4 px-6 shadow-md flex justify-between items-center">
-        <h1 className="text-xl font-bold">APQP 项目计划生成器 v2.0 - Web 版</h1>
+        <h1 className="text-xl font-bold">APQP 项目计划生成器 v2.1 - Web 版</h1>
         <button
           onClick={handleExit}
           className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded text-sm transition-colors"
