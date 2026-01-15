@@ -378,6 +378,17 @@ def get_base_path():
 base_path = get_base_path()
 dist_path = base_path / "dist"
 
+
+# ============ 退出控制 ============
+
+@app.post("/api/shutdown")
+async def shutdown():
+    """关闭服务器"""
+    import os
+    # 延迟关闭，让响应先返回
+    threading.Timer(0.5, lambda: os._exit(0)).start()
+    return {"message": "服务器即将关闭"}
+
 # 检查是否存在构建后的前端文件
 if dist_path.exists():
     app.mount("/", StaticFiles(directory=str(dist_path), html=True), name="static")
@@ -389,7 +400,14 @@ PORT = 8080  # 使用 8080 端口避免与其他服务冲突
 
 def open_browser():
     """延迟打开浏览器"""
-    webbrowser.open(f"http://localhost:{PORT}")
+    import subprocess
+    url = f"http://localhost:{PORT}"
+    try:
+        # macOS 使用 open 命令
+        subprocess.run(['open', url], check=True)
+    except Exception:
+        # 备用方案
+        webbrowser.open(url)
 
 
 if __name__ == "__main__":

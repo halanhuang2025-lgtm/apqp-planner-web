@@ -7,6 +7,7 @@ import { useEffect, useState } from 'react';
 import { useTaskStore } from './stores/taskStore';
 import { TaskEditDialog } from './components/TaskEditDialog';
 import { exportExcel } from './api/tasks';
+import api from './api/client';
 import type { Task } from './types/task';
 
 function App() {
@@ -45,6 +46,29 @@ function App() {
   useEffect(() => {
     loadTemplate();
   }, []);
+
+  // 页面关闭时退出服务器
+  useEffect(() => {
+    const handleBeforeUnload = () => {
+      // 使用 sendBeacon 确保请求发送
+      navigator.sendBeacon('/api/shutdown', '');
+    };
+
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, []);
+
+  // 退出应用
+  const handleExit = async () => {
+    if (confirm('确定要退出应用吗？')) {
+      try {
+        await api.post('/api/shutdown');
+        window.close();
+      } catch {
+        window.close();
+      }
+    }
+  };
 
   // 格式化日期范围
   const formatDateRange = (task: Task) => {
@@ -138,8 +162,14 @@ function App() {
   return (
     <div className="min-h-screen bg-gray-100">
       {/* 顶部标题栏 */}
-      <header className="bg-primary text-white py-4 px-6 shadow-md">
+      <header className="bg-primary text-white py-4 px-6 shadow-md flex justify-between items-center">
         <h1 className="text-xl font-bold">APQP 项目计划生成器 v2.0 - Web 版</h1>
+        <button
+          onClick={handleExit}
+          className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded text-sm transition-colors"
+        >
+          退出
+        </button>
       </header>
 
       <main className="container mx-auto px-4 py-6 max-w-7xl">
