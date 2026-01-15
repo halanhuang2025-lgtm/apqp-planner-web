@@ -26,23 +26,41 @@
 
 ## 快速开始
 
-### 环境要求
-
-- Python 3.9+
-- Node.js 18+
-
-### 安装运行
+### 方式一：Docker 部署（推荐）
 
 ```bash
 # 克隆项目
-git clone https://github.com/你的用户名/apqp-planner-web.git
+git clone https://github.com/halanhuang2025-lgtm/apqp-planner-web.git
 cd apqp-planner-web
 
-# 方式一：一键启动（macOS）
+# 一键启动
+docker-compose up -d
+
+# 查看日志
+docker-compose logs -f
+
+# 停止服务
+docker-compose down
+```
+
+访问地址: http://localhost
+
+### 方式二：本地运行
+
+**环境要求:**
+- Python 3.9+
+- Node.js 18+
+
+```bash
+# 克隆项目
+git clone https://github.com/halanhuang2025-lgtm/apqp-planner-web.git
+cd apqp-planner-web
+
+# macOS 一键启动
 chmod +x start.command
 ./start.command
 
-# 方式二：手动启动
+# 或手动启动
 # 后端
 cd backend
 python3 -m venv venv
@@ -56,8 +74,7 @@ npm install
 npm run dev
 ```
 
-### 访问地址
-
+访问地址:
 - 开发模式前端: http://localhost:5173
 - 后端 API: http://localhost:8000
 
@@ -65,18 +82,22 @@ npm run dev
 
 ```
 apqp-planner-web/
-├── backend/                 # Python FastAPI 后端
-│   ├── main.py             # API 入口
+├── docker-compose.yml      # Docker 编排配置
+├── backend/                # Python FastAPI 后端
+│   ├── Dockerfile
+│   ├── main.py            # API 入口
 │   ├── requirements.txt
-│   ├── core/               # 核心业务模块
-│   │   ├── scheduler.py    # 日期调度器
+│   ├── core/              # 核心业务模块
+│   │   ├── scheduler.py   # 日期调度器
 │   │   ├── excel_generator.py
 │   │   ├── config.py
 │   │   └── progress_manager.py
 │   └── templates/
 │       └── apqp_tasks.json # APQP 任务模板
 │
-├── frontend/               # React 前端
+├── frontend/              # React 前端
+│   ├── Dockerfile
+│   ├── nginx.conf         # Nginx 配置
 │   ├── package.json
 │   ├── vite.config.ts
 │   └── src/
@@ -85,8 +106,8 @@ apqp-planner-web/
 │       ├── api/
 │       └── components/
 │
-├── start.command           # macOS 启动脚本
-└── start-dev.command       # 开发模式启动
+├── start.command          # macOS 启动脚本
+└── start-dev.command      # 开发模式启动
 ```
 
 ## API 接口
