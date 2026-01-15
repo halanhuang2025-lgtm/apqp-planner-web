@@ -1,0 +1,57 @@
+{
+  "version": "1.0",
+  "created_at": "2025-01-09",
+  "description": "APQP 标准任务模板 - 新产品开发流程",
+  "tasks": [
+    {"milestone": "概念设计", "task_no": "1.1", "name": "需求评审和项目启动", "duration": 2, "owner": "项目经理", "predecessor": ""},
+    {"milestone": "概念设计", "task_no": "1.2", "name": "设计构思（#1 of 3)", "duration": 5, "owner": "设计工程师", "predecessor": "1.1"},
+    {"milestone": "概念设计", "task_no": "1.3", "name": "团队评估设计构思（#1 of 3)", "duration": 1, "owner": "设计团队", "predecessor": "1.2"},
+    {"milestone": "概念设计", "task_no": "1.4", "name": "制造和评估概念模型", "duration": 4, "owner": "设计工程师", "predecessor": "1.3"},
+    {"milestone": "概念设计", "task_no": "1.5", "name": "制造最初设计（#2 of 3)", "duration": 5, "owner": "设计工程师", "predecessor": "1.4"},
+    {"milestone": "概念设计", "task_no": "1.6", "name": "团队评估设计构思（#2 of 3)", "duration": 1, "owner": "设计团队", "predecessor": "1.5"},
+    {"milestone": "概念设计", "task_no": "1.7", "name": "用户研究（或客户评估和确认）", "duration": 5, "owner": "市场部", "predecessor": "1.6"},
+    {"milestone": "概念设计", "task_no": "1.8", "name": "建立3D评估模型", "duration": 5, "owner": "设计工程师", "predecessor": "1.7"},
+    {"milestone": "概念设计", "task_no": "1.9", "name": "团队全方位设计评估", "duration": 1, "owner": "设计团队", "predecessor": "1.8"},
+
+    {"milestone": "选供应商报价", "task_no": "2.1", "name": "创建产品规格书", "duration": 1, "owner": "设计工程师", "predecessor": "1.9"},
+    {"milestone": "选供应商报价", "task_no": "2.2", "name": "选择关键零部件供应商", "duration": 3, "owner": "采购", "predecessor": "2.1"},
+    {"milestone": "选供应商报价", "task_no": "2.3", "name": "产品报价", "duration": 5, "owner": "成本工程师", "predecessor": "2.2"},
+    {"milestone": "选供应商报价", "task_no": "2.4", "name": "产品报价客户批准", "duration": 5, "owner": "市场部", "predecessor": "2.3"},
+    {"milestone": "选供应商报价", "task_no": "2.5", "name": "第二轮报价（如果需要）", "duration": 5, "owner": "成本工程师", "predecessor": "2.4"},
+
+    {"milestone": "评审", "task_no": "3.1", "name": "准备设计评审一", "duration": 1, "owner": "项目经理", "predecessor": "2.5"},
+    {"milestone": "评审", "task_no": "3.2", "name": "设计评审一", "duration": 1, "owner": "设计团队", "predecessor": "3.1"},
+
+    {"milestone": "定案", "task_no": "4.1", "name": "最终设计意图（#3 of 3）", "duration": 5, "owner": "设计工程师", "predecessor": "3.2"},
+    {"milestone": "定案", "task_no": "4.2", "name": "团队评估设计意图（#3 of 3)", "duration": 1, "owner": "设计团队", "predecessor": "4.1"},
+
+    {"milestone": "设计定案", "task_no": "5.1", "name": "创建产品设计图纸CAD", "duration": 10, "owner": "设计工程师", "predecessor": "4.2"},
+    {"milestone": "设计定案", "task_no": "5.2", "name": "创建产品零件清单BOM", "duration": 3, "owner": "设计工程师", "predecessor": "5.1"},
+    {"milestone": "设计定案", "task_no": "5.3", "name": "制造功能样板一", "duration": 10, "owner": "样板车间", "predecessor": "5.2"},
+    {"milestone": "设计定案", "task_no": "5.4", "name": "测试和评估功能样板一", "duration": 5, "owner": "测试工程师", "predecessor": "5.3"},
+    {"milestone": "设计定案", "task_no": "5.5", "name": "做DFMEA", "duration": 5, "owner": "质量工程师", "predecessor": "5.4"},
+    {"milestone": "设计定案", "task_no": "5.6", "name": "做测试计划", "duration": 3, "owner": "测试工程师", "predecessor": "5.5"},
+    {"milestone": "设计定案", "task_no": "5.7", "name": "准备设计评审二", "duration": 1, "owner": "项目经理", "predecessor": "5.6"},
+    {"milestone": "设计定案", "task_no": "5.8", "name": "设计评审二", "duration": 1, "owner": "设计团队", "predecessor": "5.7"},
+
+    {"milestone": "模具样板", "task_no": "6.1", "name": "收到客户模具订单", "duration": 1, "owner": "市场部", "predecessor": "5.8"},
+    {"milestone": "模具样板", "task_no": "6.2", "name": "制造模具", "duration": 30, "owner": "模具供应商", "predecessor": "6.1"},
+    {"milestone": "模具样板", "task_no": "6.3", "name": "装配第一次出模样板", "duration": 3, "owner": "样板车间", "predecessor": "6.2"},
+    {"milestone": "模具样板", "task_no": "6.4", "name": "测试评估第一次出模样板", "duration": 5, "owner": "测试工程师", "predecessor": "6.3"},
+    {"milestone": "模具样板", "task_no": "6.5", "name": "模具修改", "duration": 10, "owner": "模具供应商", "predecessor": "6.4"},
+    {"milestone": "模具样板", "task_no": "6.6", "name": "装配工程样板（EB）", "duration": 5, "owner": "样板车间", "predecessor": "6.5"},
+    {"milestone": "模具样板", "task_no": "6.7", "name": "测试和评估工程样板", "duration": 5, "owner": "测试工程师", "predecessor": "6.6"},
+
+    {"milestone": "验证测试", "task_no": "7.1", "name": "寿命测试", "duration": 20, "owner": "测试工程师", "predecessor": "6.7"},
+    {"milestone": "验证测试", "task_no": "8.1", "name": "认证测试", "duration": 15, "owner": "认证机构", "predecessor": "7.1"},
+    {"milestone": "验证测试", "task_no": "9.1", "name": "现场使用测试", "duration": 30, "owner": "客户", "predecessor": "8.1"},
+
+    {"milestone": "量产准备", "task_no": "10.1", "name": "包装设计", "duration": 5, "owner": "包装工程师", "predecessor": "9.1"},
+    {"milestone": "量产准备", "task_no": "10.2", "name": "包装运输测试", "duration": 3, "owner": "测试工程师", "predecessor": "10.1"},
+    {"milestone": "量产准备", "task_no": "11.1", "name": "第二次专利评审", "duration": 2, "owner": "法务", "predecessor": "10.2"},
+    {"milestone": "量产准备", "task_no": "12.1", "name": "第三次设计评审", "duration": 1, "owner": "设计团队", "predecessor": "11.1"},
+    {"milestone": "量产准备", "task_no": "13.1", "name": "创建PPAP相关文件", "duration": 10, "owner": "质量工程师", "predecessor": "12.1"},
+    {"milestone": "量产准备", "task_no": "13.2", "name": "创建品质控制计划", "duration": 5, "owner": "质量工程师", "predecessor": "13.1"},
+    {"milestone": "量产准备", "task_no": "13.3", "name": "创建生产线操作指导书", "duration": 5, "owner": "工艺工程师", "predecessor": "13.2"}
+  ]
+}

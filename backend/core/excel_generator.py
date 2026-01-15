@@ -1,0 +1,567 @@
+"""
+Excel 生成模块 - 创建带甘特图的项目计划 Excel
+支持计划/实际双行甘特图显示和公式关联
+"""
+
+from datetime import datetime, timedelta
+from typing import List, Optional
+from openpyxl import Workbook
+from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
+from openpyxl.utils import get_column_letter
+from openpyxl.formatting.rule import CellIsRule
+
+from .scheduler import Task, Scheduler
+from .progress_manager import ProgressManager
+
+
+class ExcelGenerator:
+    """Excel 甘特图生成器"""
+
+    def __init__(self):
+        # 样式定义
+        self.header_font = Font(name="微软雅黑", size=16, bold=True)
+        self.title_font = Font(name="微软雅黑", size=11, bold=True)
+        self.normal_font = Font(name="微软雅黑", size=10)
+        self.small_font = Font(name="微软雅黑", size=8)
+
+        # 表头填充色
+        self.header_fill = PatternFill(start_color="4472C4", end_color="4472C4", fill_type="solid")
+        self.milestone_fill = PatternFill(start_color="D9E2F3", end_color="D9E2F3", fill_type="solid")
+
+        # 甘特图颜色
+        self.gantt_plan_fill = PatternFill(start_color="5B9BD5", end_color="5B9BD5", fill_type="solid")  # 蓝色 - 计划
+        self.gantt_actual_fill = PatternFill(start_color="E74C3C", end_color="E74C3C", fill_type="solid")  # 红色 - 实际进行中
+        self.gantt_complete_fill = PatternFill(start_color="27AE60", end_color="27AE60", fill_type="solid")  # 绿色 - 已完成
+        self.weekend_fill = PatternFill(start_color="F2F2F2", end_color="F2F2F2", fill_type="solid")
+        self.today_fill = PatternFill(start_color="FFC000", end_color="FFC000", fill_type="solid")
+
+        # 条件格式颜色
+        self.delay_fill = PatternFill(start_color="FFCCCC", end_color="FFCCCC", fill_type="solid")  # 延期红
+        self.ontime_fill = PatternFill(start_color="CCFFCC", end_color="CCFFCC", fill_type="solid")  # 准时绿
+        self.early_fill = PatternFill(start_color="CCE5FF", end_color="CCE5FF", fill_type="solid")  # 提前蓝
+
+        # 实际行背景色（浅灰）
+        self.actual_row_fill = PatternFill(start_color="FAFAFA", end_color="FAFAFA", fill_type="solid")
+
+        self.thin_border = Border(
+            left=Side(style='thin'),
+            right=Side(style='thin'),
+            top=Side(style='thin'),
+            bottom=Side(style='thin')
+        )
+
+        self.center_align = Alignment(horizontal='center', vertical='center', wrap_text=True)
+        self.left_align = Alignment(horizontal='left', vertical='center', wrap_text=True)
+
+    def generate(self,
+                 tasks: List[Task],
+                 project_name: str,
+                 start_date: datetime,
+                 output_path: str,
+                 gantt_days: int = 90,
+                 exclude_weekends: bool = True,
+                 exclude_holidays: bool = False,
+                 progress_manager: Optional[ProgressManager] = None) -> str:
+        """
+        生成带甘特图的 Excel 文件
+
+        Args:
+            tasks: 任务列表
+            project_name: 项目名称
+            start_date: 项目开始日期
+            output_path: 输出文件路径
+            gantt_days: 甘特图显示天数
+            exclude_weekends: 是否排除周末计算工作日
+            exclude_holidays: 是否排除节假日
+            progress_manager: 进度管理器（可选，用于生成进度历史工作表）
+
+        Returns:
+            生成的文件路径
+        """
+        # 计算任务日期
+        scheduler = Scheduler(exclude_weekends=exclude_weekends,
+                             exclude_holidays=exclude_holidays)
+        tasks = scheduler.calculate_dates(tasks, start_date)
+
+        wb = Workbook()
+        ws = wb.active
+        ws.title = "项目计划"
+
+        # 创建标题区域
+        self._create_header(ws, project_name)
+
+        # 创建表头
+        self._create_table_header(ws, start_date, gantt_days)
+
+        # 填充任务数据（双行模式）
+        last_data_row = self._fill_tasks(ws, tasks, start_date, gantt_days)
+
+        # 添加条件格式（工期差异列）
+        self._add_conditional_formatting(ws, last_data_row)
+
+        # 添加图例
+        self._add_legend(ws, last_data_row)
+
+        # 冻结窗格（N列开始是甘特图）
+        ws.freeze_panes = 'N6'
+
+        # 如果有进度记录，创建进度历史工作表
+        if progress_manager and progress_manager.records:
+            self._create_progress_history_sheet(wb, tasks, progress_manager)
+
+        # 保存文件
+        wb.save(output_path)
+
+        return output_path
+
+    def _create_header(self, ws, project_name: str):
+        """创建标题区域"""
+        ws.merge_cells('A1:L1')
+        ws['A1'] = f"{project_name} - 新产品开发计划"
+        ws['A1'].font = self.header_font
+        ws['A1'].alignment = self.center_align
+
+        ws['M1'] = f"创建日期: {datetime.now().strftime('%Y-%m-%d')}"
+        ws['M1'].font = self.normal_font
+
+        ws.row_dimensions[1].height = 30
+        ws.row_dimensions[2].height = 10  # 空行
+
+    def _create_table_header(self, ws, start_date: datetime, gantt_days: int):
+        """创建表头"""
+        # 新列布局: A-M 为数据列，N 起为甘特图
+        headers = ["里程碑", "编号", "任务名称", "主责人", "前置任务",
+                   "计划开始", "计划结束", "计划工期",
+                   "实际开始", "实际结束", "进度偏差",
+                   "状态", "类型"]
+        header_widths = [12, 6, 32, 10, 8, 11, 11, 8, 11, 11, 8, 8, 6]
+
+        # 第 3-5 行为表头（3-4行合并为主表头，5行为日期星期）
+        for col, (header, width) in enumerate(zip(headers, header_widths), start=1):
+            # 合并 3-4 行
+            ws.merge_cells(start_row=3, start_column=col, end_row=4, end_column=col)
+            cell = ws.cell(row=3, column=col, value=header)
+            cell.font = Font(name="微软雅黑", size=10, bold=True, color="FFFFFF")
+            cell.fill = self.header_fill
+            cell.alignment = self.center_align
+            cell.border = self.thin_border
+            ws.column_dimensions[get_column_letter(col)].width = width
+
+        # 甘特图日期列（从 N 列 = 14 列开始）
+        gantt_start_col = 14
+        today = datetime.now().date()
+
+        for i in range(gantt_days):
+            current_date = start_date + timedelta(days=i)
+            col = gantt_start_col + i
+
+            # 第 3 行: 月份（每月第一天显示）
+            cell3 = ws.cell(row=3, column=col)
+            if current_date.day == 1 or i == 0:
+                cell3.value = f"{current_date.month}月"
+            cell3.font = self.small_font
+            cell3.alignment = self.center_align
+            cell3.border = self.thin_border
+
+            # 第 4 行: 日期
+            cell4 = ws.cell(row=4, column=col, value=current_date.day)
+            cell4.font = self.small_font
+            cell4.alignment = self.center_align
+            cell4.border = self.thin_border
+
+            # 第 5 行: 星期
+            weekday_names = ['一', '二', '三', '四', '五', '六', '日']
+            cell5 = ws.cell(row=5, column=col, value=weekday_names[current_date.weekday()])
+            cell5.font = self.small_font
+            cell5.alignment = self.center_align
+            cell5.border = self.thin_border
+
+            # 周末着色
+            if current_date.weekday() >= 5:
+                cell3.fill = self.weekend_fill
+                cell4.fill = self.weekend_fill
+                cell5.fill = self.weekend_fill
+
+            # 今天高亮
+            if current_date.date() == today:
+                cell3.fill = self.today_fill
+                cell4.fill = self.today_fill
+                cell5.fill = self.today_fill
+
+            ws.column_dimensions[get_column_letter(col)].width = 3
+
+        ws.row_dimensions[3].height = 18
+        ws.row_dimensions[4].height = 18
+        ws.row_dimensions[5].height = 16
+
+    def _fill_tasks(self, ws, tasks: List[Task], start_date: datetime, gantt_days: int) -> int:
+        """
+        填充任务数据（双行模式：每个任务占2行）
+
+        Returns:
+            最后一个数据行的行号
+        """
+        gantt_start_col = 14  # N列
+        current_row = 6
+        current_milestone = None
+        milestone_start_row = 6
+        milestone_rows = []  # 记录需要合并的里程碑区域
+
+        for task in tasks:
+            plan_row = current_row
+            actual_row = current_row + 1
+
+            # 里程碑变化时，记录前一个里程碑的合并范围
+            if task.milestone != current_milestone:
+                if current_milestone is not None and current_row > milestone_start_row:
+                    milestone_rows.append((milestone_start_row, current_row - 1))
+                current_milestone = task.milestone
+                milestone_start_row = current_row
+
+            # ========== 计划行 (plan_row) ==========
+
+            # A列: 里程碑
+            cell_a = ws.cell(row=plan_row, column=1, value=task.milestone)
+            cell_a.font = self.title_font
+            cell_a.fill = self.milestone_fill
+            cell_a.alignment = self.center_align
+            cell_a.border = self.thin_border
+
+            # B列: 编号
+            cell_b = ws.cell(row=plan_row, column=2, value=task.task_no)
+            cell_b.font = self.normal_font
+            cell_b.alignment = self.center_align
+            cell_b.border = self.thin_border
+
+            # C列: 任务名称
+            cell_c = ws.cell(row=plan_row, column=3, value=task.name)
+            cell_c.font = self.normal_font
+            cell_c.alignment = self.left_align
+            cell_c.border = self.thin_border
+
+            # D列: 主责人
+            cell_d = ws.cell(row=plan_row, column=4, value=task.owner)
+            cell_d.font = self.normal_font
+            cell_d.alignment = self.center_align
+            cell_d.border = self.thin_border
+
+            # E列: 前置任务
+            cell_e = ws.cell(row=plan_row, column=5, value=task.predecessor or "-")
+            cell_e.font = self.normal_font
+            cell_e.alignment = self.center_align
+            cell_e.border = self.thin_border
+
+            # F列: 计划开始日期
+            cell_f = ws.cell(row=plan_row, column=6)
+            if task.start_date:
+                cell_f.value = task.start_date
+                cell_f.number_format = 'YYYY-MM-DD'
+            cell_f.font = self.normal_font
+            cell_f.alignment = self.center_align
+            cell_f.border = self.thin_border
+
+            # G列: 计划结束日期
+            cell_g = ws.cell(row=plan_row, column=7)
+            if task.end_date:
+                cell_g.value = task.end_date
+                cell_g.number_format = 'YYYY-MM-DD'
+            cell_g.font = self.normal_font
+            cell_g.alignment = self.center_align
+            cell_g.border = self.thin_border
+
+            # H列: 计划工期（公式）
+            cell_h = ws.cell(row=plan_row, column=8)
+            cell_h.value = f'=IF(AND(F{plan_row}<>"",G{plan_row}<>""),G{plan_row}-F{plan_row}+1,"")'
+            cell_h.font = self.normal_font
+            cell_h.alignment = self.center_align
+            cell_h.border = self.thin_border
+
+            # I列: 实际开始日期
+            cell_i = ws.cell(row=plan_row, column=9)
+            if task.actual_start:
+                cell_i.value = task.actual_start
+                cell_i.number_format = 'YYYY-MM-DD'
+            cell_i.font = self.normal_font
+            cell_i.alignment = self.center_align
+            cell_i.border = self.thin_border
+
+            # J列: 实际结束日期
+            cell_j = ws.cell(row=plan_row, column=10)
+            if task.actual_end:
+                cell_j.value = task.actual_end
+                cell_j.number_format = 'YYYY-MM-DD'
+            cell_j.font = self.normal_font
+            cell_j.alignment = self.center_align
+            cell_j.border = self.thin_border
+
+            # K列: 进度偏差（公式：实际结束 - 计划结束，正数延期，负数提前）
+            cell_k = ws.cell(row=plan_row, column=11)
+            cell_k.value = f'=IF(AND(J{plan_row}<>"",G{plan_row}<>""),J{plan_row}-G{plan_row},"")'
+            cell_k.font = self.normal_font
+            cell_k.alignment = self.center_align
+            cell_k.border = self.thin_border
+
+            # L列: 状态（公式）
+            cell_l = ws.cell(row=plan_row, column=12)
+            cell_l.value = f'=IF(J{plan_row}<>"","已完成",IF(I{plan_row}<>"","进行中","未开始"))'
+            cell_l.font = self.normal_font
+            cell_l.alignment = self.center_align
+            cell_l.border = self.thin_border
+
+            # M列: 类型标识 - 计划
+            cell_m = ws.cell(row=plan_row, column=13, value="计划")
+            cell_m.font = Font(name="微软雅黑", size=9, color="5B9BD5")
+            cell_m.alignment = self.center_align
+            cell_m.border = self.thin_border
+
+            # ========== 实际行 (actual_row) ==========
+
+            # A-L列: 实际行空白（这些列在实际行留空或使用浅色背景）
+            for col in range(1, 13):
+                cell = ws.cell(row=actual_row, column=col)
+                cell.fill = self.actual_row_fill
+                cell.border = self.thin_border
+
+            # M列: 类型标识 - 实际
+            cell_m2 = ws.cell(row=actual_row, column=13, value="实际")
+            cell_m2.font = Font(name="微软雅黑", size=9, color="E74C3C")
+            cell_m2.alignment = self.center_align
+            cell_m2.border = self.thin_border
+            cell_m2.fill = self.actual_row_fill
+
+            # ========== 绘制甘特图条 ==========
+
+            for i in range(gantt_days):
+                current_date = start_date + timedelta(days=i)
+                col = gantt_start_col + i
+
+                # 计划行甘特图
+                cell_plan = ws.cell(row=plan_row, column=col)
+                cell_plan.border = self.thin_border
+
+                in_plan = (task.start_date and task.end_date and
+                          task.start_date.date() <= current_date.date() <= task.end_date.date())
+
+                if in_plan:
+                    cell_plan.fill = self.gantt_plan_fill
+                elif current_date.weekday() >= 5:
+                    cell_plan.fill = self.weekend_fill
+
+                # 实际行甘特图
+                cell_actual = ws.cell(row=actual_row, column=col)
+                cell_actual.border = self.thin_border
+
+                in_actual = (task.actual_start and
+                            task.actual_start.date() <= current_date.date())
+
+                if in_actual:
+                    if task.actual_end:
+                        # 已完成：检查日期是否在实际范围内
+                        if current_date.date() <= task.actual_end.date():
+                            cell_actual.fill = self.gantt_complete_fill
+                        elif current_date.weekday() >= 5:
+                            cell_actual.fill = self.weekend_fill
+                        else:
+                            cell_actual.fill = self.actual_row_fill
+                    else:
+                        # 进行中：从实际开始到今天
+                        if current_date.date() <= datetime.now().date():
+                            cell_actual.fill = self.gantt_actual_fill
+                        elif current_date.weekday() >= 5:
+                            cell_actual.fill = self.weekend_fill
+                        else:
+                            cell_actual.fill = self.actual_row_fill
+                elif current_date.weekday() >= 5:
+                    cell_actual.fill = self.weekend_fill
+                else:
+                    cell_actual.fill = self.actual_row_fill
+
+            ws.row_dimensions[plan_row].height = 22
+            ws.row_dimensions[actual_row].height = 18
+
+            current_row += 2  # 每个任务占2行
+
+        # 处理最后一个里程碑的合并
+        if current_row > milestone_start_row:
+            milestone_rows.append((milestone_start_row, current_row - 1))
+
+        # 合并里程碑单元格
+        for start_r, end_r in milestone_rows:
+            if end_r > start_r:
+                ws.merge_cells(f'A{start_r}:A{end_r}')
+
+        return current_row - 1
+
+    def _add_conditional_formatting(self, ws, last_row: int):
+        """添加条件格式（进度偏差列）"""
+        # K列进度偏差的条件格式（正数延期红，负数提前蓝，0准时绿）
+        range_str = f'K6:K{last_row}'
+
+        # 延期（>0）- 红色
+        ws.conditional_formatting.add(
+            range_str,
+            CellIsRule(operator='greaterThan', formula=['0'], fill=self.delay_fill)
+        )
+
+        # 准时（=0）- 绿色
+        ws.conditional_formatting.add(
+            range_str,
+            CellIsRule(operator='equal', formula=['0'], fill=self.ontime_fill)
+        )
+
+        # 提前（<0）- 蓝色
+        ws.conditional_formatting.add(
+            range_str,
+            CellIsRule(operator='lessThan', formula=['0'], fill=self.early_fill)
+        )
+
+    def _add_legend(self, ws, last_row: int):
+        """添加图例说明"""
+        legend_row = last_row + 3
+
+        ws.cell(row=legend_row, column=1, value="甘特图:").font = self.title_font
+
+        # 计划 - 蓝色
+        cell1 = ws.cell(row=legend_row, column=3)
+        cell1.fill = self.gantt_plan_fill
+        ws.cell(row=legend_row, column=4, value="计划进度").font = self.normal_font
+
+        # 实际进行中 - 红色
+        cell2 = ws.cell(row=legend_row, column=6)
+        cell2.fill = self.gantt_actual_fill
+        ws.cell(row=legend_row, column=7, value="实际进行中").font = self.normal_font
+
+        # 已完成 - 绿色
+        cell3 = ws.cell(row=legend_row, column=9)
+        cell3.fill = self.gantt_complete_fill
+        ws.cell(row=legend_row, column=10, value="已完成").font = self.normal_font
+
+        # 进度偏差说明（实际结束 - 计划结束）
+        legend_row2 = legend_row + 1
+        ws.cell(row=legend_row2, column=1, value="进度偏差:").font = self.title_font
+
+        cell4 = ws.cell(row=legend_row2, column=3)
+        cell4.fill = self.delay_fill
+        ws.cell(row=legend_row2, column=4, value=">0 延期").font = self.normal_font
+
+        cell5 = ws.cell(row=legend_row2, column=6)
+        cell5.fill = self.ontime_fill
+        ws.cell(row=legend_row2, column=7, value="=0 准时").font = self.normal_font
+
+        cell6 = ws.cell(row=legend_row2, column=9)
+        cell6.fill = self.early_fill
+        ws.cell(row=legend_row2, column=10, value="<0 提前").font = self.normal_font
+
+    def _create_progress_history_sheet(self, wb: Workbook, tasks: List[Task],
+                                       progress_manager: ProgressManager):
+        """创建进度历史工作表"""
+        ws = wb.create_sheet("进度历史")
+
+        # 创建任务名称查找字典
+        task_names = {task.task_no: task.name for task in tasks}
+
+        # 表头
+        headers = ["任务编号", "任务名称", "记录日期", "完成进度", "状态", "备注", "问题"]
+        header_widths = [10, 30, 12, 10, 10, 30, 30]
+
+        for col, (header, width) in enumerate(zip(headers, header_widths), start=1):
+            cell = ws.cell(row=1, column=col, value=header)
+            cell.font = Font(name="微软雅黑", size=10, bold=True, color="FFFFFF")
+            cell.fill = self.header_fill
+            cell.alignment = self.center_align
+            cell.border = self.thin_border
+            ws.column_dimensions[get_column_letter(col)].width = width
+
+        ws.row_dimensions[1].height = 25
+
+        # 获取所有进度记录并按日期排序
+        all_records = list(progress_manager.records.values())
+        all_records.sort(key=lambda r: (r.record_date, r.task_no))
+
+        # 填充数据
+        for row, record in enumerate(all_records, start=2):
+            # 任务编号
+            cell_a = ws.cell(row=row, column=1, value=record.task_no)
+            cell_a.font = self.normal_font
+            cell_a.alignment = self.center_align
+            cell_a.border = self.thin_border
+
+            # 任务名称
+            task_name = task_names.get(record.task_no, "未知任务")
+            cell_b = ws.cell(row=row, column=2, value=task_name)
+            cell_b.font = self.normal_font
+            cell_b.alignment = self.left_align
+            cell_b.border = self.thin_border
+
+            # 记录日期
+            cell_c = ws.cell(row=row, column=3, value=record.record_date)
+            cell_c.number_format = 'YYYY-MM-DD'
+            cell_c.font = self.normal_font
+            cell_c.alignment = self.center_align
+            cell_c.border = self.thin_border
+
+            # 完成进度
+            cell_d = ws.cell(row=row, column=4, value=f"{record.progress}%")
+            cell_d.font = self.normal_font
+            cell_d.alignment = self.center_align
+            cell_d.border = self.thin_border
+
+            # 状态
+            cell_e = ws.cell(row=row, column=5, value=record.status.value)
+            cell_e.font = self.normal_font
+            cell_e.alignment = self.center_align
+            cell_e.border = self.thin_border
+
+            # 备注
+            cell_f = ws.cell(row=row, column=6, value=record.note or "")
+            cell_f.font = self.normal_font
+            cell_f.alignment = self.left_align
+            cell_f.border = self.thin_border
+
+            # 问题
+            cell_g = ws.cell(row=row, column=7, value=record.issues or "")
+            cell_g.font = self.normal_font
+            cell_g.alignment = self.left_align
+            cell_g.border = self.thin_border
+
+            ws.row_dimensions[row].height = 22
+
+        # 冻结首行
+        ws.freeze_panes = 'A2'
+
+
+def generate_excel(tasks: List[Task],
+                   project_name: str,
+                   start_date: datetime,
+                   output_path: str,
+                   gantt_days: int = 90,
+                   exclude_weekends: bool = True,
+                   exclude_holidays: bool = False,
+                   progress_manager: Optional[ProgressManager] = None) -> str:
+    """
+    便捷函数：生成 Excel 文件
+
+    Args:
+        tasks: 任务列表
+        project_name: 项目名称
+        start_date: 开始日期
+        output_path: 输出路径
+        gantt_days: 甘特图天数
+        exclude_weekends: 排除周末
+        exclude_holidays: 排除节假日
+        progress_manager: 进度管理器（可选）
+
+    Returns:
+        生成的文件路径
+    """
+    generator = ExcelGenerator()
+    return generator.generate(
+        tasks=tasks,
+        project_name=project_name,
+        start_date=start_date,
+        output_path=output_path,
+        gantt_days=gantt_days,
+        exclude_weekends=exclude_weekends,
+        exclude_holidays=exclude_holidays,
+        progress_manager=progress_manager
+    )
