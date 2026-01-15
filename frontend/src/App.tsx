@@ -6,7 +6,6 @@
 import { useEffect, useState } from 'react';
 import { useTaskStore } from './stores/taskStore';
 import { TaskEditDialog } from './components/TaskEditDialog';
-import { ProgressRecordDialog } from './components/ProgressRecordDialog';
 import { exportExcel } from './api/tasks';
 import api from './api/client';
 import type { Task } from './types/task';
@@ -42,10 +41,6 @@ function App() {
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<'edit' | 'add'>('edit');
   const [editingTask, setEditingTask] = useState<Task | null>(null);
-
-  // 进度记录对话框
-  const [progressDialogOpen, setProgressDialogOpen] = useState(false);
-  const [progressTask, setProgressTask] = useState<Task | null>(null);
 
   // 初始加载模板
   useEffect(() => {
@@ -136,20 +131,6 @@ function App() {
       const position = selectedIndices.length === 1 ? selectedIndices[0] + 1 : undefined;
       await addTask(taskData, position);
     }
-  };
-
-  // 打开进度记录对话框
-  const handleRecordProgress = () => {
-    const task = getSelectedTask();
-    if (task) {
-      setProgressTask(task);
-      setProgressDialogOpen(true);
-    }
-  };
-
-  // 进度记录保存后刷新
-  const handleProgressSaved = () => {
-    calculateSchedule(); // 刷新任务列表
   };
 
   // 导出 Excel
@@ -328,13 +309,6 @@ function App() {
                 排除任务
               </button>
               <button
-                className="btn btn-primary text-sm py-1 bg-green-600 hover:bg-green-700"
-                onClick={handleRecordProgress}
-                disabled={selectedIndices.length !== 1}
-              >
-                记录进度
-              </button>
-              <button
                 className="btn btn-secondary text-sm py-1"
                 onClick={() => {
                   const task = getSelectedTask();
@@ -393,7 +367,6 @@ function App() {
                     <th className="w-48">计划日期</th>
                     <th className="w-20">进度</th>
                     <th className="w-14">差异</th>
-                    <th className="w-16">操作</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -422,18 +395,6 @@ function App() {
                         {getStatusShort(task.status) && ` (${getStatusShort(task.status)})`}
                       </td>
                       <td>{calculateDiff(task)}</td>
-                      <td>
-                        <button
-                          className="px-2 py-1 text-xs bg-green-500 hover:bg-green-600 text-white rounded"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            setProgressTask(task);
-                            setProgressDialogOpen(true);
-                          }}
-                        >
-                          记录
-                        </button>
-                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -465,14 +426,6 @@ function App() {
         onClose={() => setDialogOpen(false)}
         onSave={handleSaveTask}
         mode={dialogMode}
-      />
-
-      {/* 进度记录对话框 */}
-      <ProgressRecordDialog
-        task={progressTask}
-        isOpen={progressDialogOpen}
-        onClose={() => setProgressDialogOpen(false)}
-        onSaved={handleProgressSaved}
       />
     </div>
   );
