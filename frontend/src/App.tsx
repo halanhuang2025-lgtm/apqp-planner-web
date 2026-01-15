@@ -393,6 +393,7 @@ function App() {
                     <th className="w-48">计划日期</th>
                     <th className="w-20">进度</th>
                     <th className="w-14">差异</th>
+                    <th className="w-16">操作</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -421,6 +422,18 @@ function App() {
                         {getStatusShort(task.status) && ` (${getStatusShort(task.status)})`}
                       </td>
                       <td>{calculateDiff(task)}</td>
+                      <td>
+                        <button
+                          className="px-2 py-1 text-xs bg-green-500 hover:bg-green-600 text-white rounded"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setProgressTask(task);
+                            setProgressDialogOpen(true);
+                          }}
+                        >
+                          记录
+                        </button>
+                      </td>
                     </tr>
                   ))}
                 </tbody>
