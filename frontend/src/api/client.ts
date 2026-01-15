@@ -6,7 +6,7 @@ import axios from 'axios';
 
 // 开发模式使用后端地址，生产模式使用相对路径
 const baseURL = import.meta.env.DEV
-  ? 'http://localhost:8000'
+  ? 'http://localhost:8080'
   : '';
 
 export const api = axios.create({

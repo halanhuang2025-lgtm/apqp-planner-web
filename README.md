@@ -45,6 +45,12 @@ docker-compose down
 
 访问地址: http://localhost
 
+### 方式三：macOS App（测试版）
+
+直接双击 `APQP项目计划生成器.app` 即可启动，浏览器会自动打开。
+
+访问地址: http://localhost:8080
+
 ### 方式二：本地运行
 
 **环境要求:**

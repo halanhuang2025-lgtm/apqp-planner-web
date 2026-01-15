@@ -43,3 +43,10 @@ logs/
 # Temp files
 *.tmp
 *.temp
+
+# PyInstaller
+build/
+*.spec
+
+# macOS App
+*.app

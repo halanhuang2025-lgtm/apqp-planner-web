@@ -365,23 +365,37 @@ async def export_excel(request: ExportRequest):
 
 # ============ 静态文件服务（生产模式） ============
 
+# 获取基础路径（支持 PyInstaller 打包）
+def get_base_path():
+    """获取应用基础路径，支持 PyInstaller 打包"""
+    if getattr(sys, 'frozen', False):
+        # PyInstaller 打包后的路径
+        return Path(sys._MEIPASS)
+    else:
+        # 开发模式路径
+        return Path(__file__).parent.parent
+
+base_path = get_base_path()
+dist_path = base_path / "dist"
+
 # 检查是否存在构建后的前端文件
-dist_path = Path(__file__).parent.parent / "dist"
 if dist_path.exists():
     app.mount("/", StaticFiles(directory=str(dist_path), html=True), name="static")
 
 
 # ============ 启动入口 ============
 
+PORT = 8080  # 使用 8080 端口避免与其他服务冲突
+
 def open_browser():
     """延迟打开浏览器"""
-    webbrowser.open("http://localhost:8000")
+    webbrowser.open(f"http://localhost:{PORT}")
 
 
 if __name__ == "__main__":
     print("=" * 50)
     print("  APQP 项目计划生成器 - Web 版")
-    print("  访问地址: http://localhost:8000")
+    print(f"  访问地址: http://localhost:{PORT}")
     print("=" * 50)
 
     # 1秒后自动打开浏览器
@@ -391,6 +405,6 @@ if __name__ == "__main__":
     uvicorn.run(
         app,
         host="127.0.0.1",
-        port=8000,
+        port=PORT,
         log_level="info"
     )

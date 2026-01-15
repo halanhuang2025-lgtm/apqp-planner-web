@@ -31,7 +31,7 @@ fi
 
 echo ""
 echo "🚀 正在启动服务器..."
-echo "   访问地址: http://localhost:8000"
+echo "   访问地址: http://localhost:8080"
 echo ""
 echo "   按 Ctrl+C 停止服务器"
 echo "=================================================="

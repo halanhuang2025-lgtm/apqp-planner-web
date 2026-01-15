@@ -18,7 +18,7 @@ else
     source venv/bin/activate
 fi
 
-echo "🚀 启动后端服务器 (端口 8000)..."
+echo "🚀 启动后端服务器 (端口 8080)..."
 python main.py &
 BACKEND_PID=$!
 
@@ -36,7 +36,7 @@ FRONTEND_PID=$!
 
 echo ""
 echo "=================================================="
-echo "  后端: http://localhost:8000"
+echo "  后端: http://localhost:8080"
 echo "  前端: http://localhost:5173"
 echo ""
 echo "  按 Ctrl+C 停止所有服务"
