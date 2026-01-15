@@ -37,3 +37,23 @@ export interface ScheduleResponse {
     total_days: number;
   };
 }
+
+// 进度记录
+export interface ProgressRecord {
+  task_index: number;
+  progress: number;
+  status: TaskStatus;
+  note: string;
+  issues: string;
+  record_date: string;
+  timestamp: string;
+}
+
+export interface ProgressRecordRequest {
+  task_index: number;
+  progress: number;
+  status: string;
+  note?: string;
+  issues?: string;
+  record_date?: string;
+}

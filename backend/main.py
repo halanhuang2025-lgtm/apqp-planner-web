@@ -379,6 +379,102 @@ base_path = get_base_path()
 dist_path = base_path / "dist"
 
 
+# ============ 进度记录 API ============
+
+class ProgressRecordRequest(BaseModel):
+    """进度记录请求"""
+    task_index: int
+    progress: int  # 0-100
+    status: str  # 未开始/进行中/已完成/暂停
+    note: str = ""
+    issues: str = ""
+    record_date: Optional[str] = None  # ISO 格式，默认今天
+
+
+class ProgressRecordResponse(BaseModel):
+    """进度记录响应"""
+    record_id: str
+    task_no: str
+    record_date: str
+    progress: int
+    status: str
+    note: str
+    issues: str
+
+
+@app.post("/api/progress/record")
+async def record_progress(request: ProgressRecordRequest):
+    """记录任务进度"""
+    if request.task_index < 0 or request.task_index >= len(app_state.tasks):
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    task = app_state.tasks[request.task_index]
+
+    # 解析状态
+    status_map = {
+        "未开始": TaskStatus.NOT_STARTED,
+        "进行中": TaskStatus.IN_PROGRESS,
+        "已完成": TaskStatus.COMPLETED,
+        "暂停": TaskStatus.PAUSED,
+    }
+    status = status_map.get(request.status, TaskStatus.NOT_STARTED)
+
+    # 解析日期
+    record_date = None
+    if request.record_date:
+        try:
+            record_date = datetime.strptime(request.record_date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="日期格式错误")
+
+    # 添加记录
+    record = app_state.progress_manager.add_record(
+        task=task,
+        progress=request.progress,
+        status=status,
+        note=request.note,
+        issues=request.issues,
+        record_date=record_date
+    )
+
+    return {
+        "record_id": record.record_id,
+        "task_no": record.task_no,
+        "record_date": record.record_date.strftime("%Y-%m-%d"),
+        "progress": record.progress,
+        "status": record.status.value,
+        "note": record.note,
+        "issues": record.issues,
+        "task": task_to_model(task, request.task_index)
+    }
+
+
+@app.get("/api/progress/history/{task_index}")
+async def get_progress_history(task_index: int):
+    """获取任务的进度历史"""
+    if task_index < 0 or task_index >= len(app_state.tasks):
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    task = app_state.tasks[task_index]
+    history = app_state.progress_manager.get_task_history(task.task_no)
+
+    return {
+        "task_no": task.task_no,
+        "task_name": task.name,
+        "records": [
+            {
+                "record_id": r.record_id,
+                "record_date": r.record_date.strftime("%Y-%m-%d"),
+                "progress": r.progress,
+                "status": r.status.value,
+                "note": r.note,
+                "issues": r.issues,
+            }
+            for r in history
+        ]
+    }
+
+
 # ============ 退出控制 ============
 
 @app.post("/api/shutdown")

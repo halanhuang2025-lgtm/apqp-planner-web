@@ -3,7 +3,7 @@
  */
 
 import api from './client';
-import type { Task, ScheduleRequest, ScheduleResponse } from '../types/task';
+import type { Task, ScheduleRequest, ScheduleResponse, ProgressRecord, ProgressRecordRequest } from '../types/task';
 
 // 获取所有任务
 export const getTasks = async (): Promise<Task[]> => {
@@ -74,5 +74,19 @@ export const exportExcel = async (request: ExportRequest): Promise<Blob> => {
   const response = await api.post('/api/export/excel', request, {
     responseType: 'blob'
   });
+  return response.data;
+};
+
+// ============ 进度记录 API ============
+
+// 记录进度
+export const recordProgress = async (request: ProgressRecordRequest): Promise<{ message: string; task: Task }> => {
+  const response = await api.post('/api/progress/record', request);
+  return response.data;
+};
+
+// 获取进度历史
+export const getProgressHistory = async (taskIndex: number): Promise<ProgressRecord[]> => {
+  const response = await api.get(`/api/progress/history/${taskIndex}`);
   return response.data;
 };
