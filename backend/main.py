@@ -315,6 +315,7 @@ class ExportRequest(BaseModel):
     """导出请求"""
     project_name: str = "新产品开发项目"
     start_date: str  # ISO 格式: YYYY-MM-DD
+    gantt_start_date: Optional[str] = None  # 甘特图开始日期（默认使用 start_date）
     gantt_days: int = 180
     exclude_weekends: bool = True
     exclude_holidays: bool = False
@@ -334,6 +335,14 @@ async def export_excel(request: ExportRequest):
     except ValueError:
         raise HTTPException(status_code=400, detail="日期格式错误")
 
+    # 解析甘特图开始日期
+    gantt_start_date = None
+    if request.gantt_start_date:
+        try:
+            gantt_start_date = datetime.strptime(request.gantt_start_date, "%Y-%m-%d")
+        except ValueError:
+            pass  # 使用默认值（start_date）
+
     # 生成临时文件
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
     filename = f"{request.project_name}_开发计划_{timestamp}.xlsx"
@@ -352,7 +361,8 @@ async def export_excel(request: ExportRequest):
         gantt_days=request.gantt_days,
         exclude_weekends=request.exclude_weekends,
         exclude_holidays=request.exclude_holidays,
-        progress_manager=app_state.progress_manager
+        progress_manager=app_state.progress_manager,
+        gantt_start_date=gantt_start_date
     )
 
     # 返回文件下载
@@ -376,7 +386,11 @@ def get_base_path():
         return Path(__file__).parent.parent
 
 base_path = get_base_path()
-dist_path = base_path / "dist"
+# 开发模式: frontend/dist, 打包模式: dist
+if getattr(sys, 'frozen', False):
+    dist_path = base_path / "dist"
+else:
+    dist_path = base_path / "frontend" / "dist"
 
 
 # ============ 进度记录 API ============
@@ -437,11 +451,27 @@ async def record_progress(request: ProgressRecordRequest):
         record_date=record_date
     )
 
+    # 同步更新任务的进度和状态
+    task.progress = request.progress
+    task.status = status
+
+    # 自动更新实际日期（与进度联动）
+    actual_date = record_date or datetime.now()
+
+    # 进度 > 0 且未设置实际开始日期 → 自动设置
+    if request.progress > 0 and not task.actual_start:
+        task.actual_start = actual_date
+
+    # 进度 = 100% 且未设置实际结束日期 → 自动设置
+    if request.progress == 100 and not task.actual_end:
+        task.actual_end = actual_date
+
     return {
         "record_id": record.record_id,
         "task_no": record.task_no,
         "record_date": record.record_date.strftime("%Y-%m-%d"),
         "progress": record.progress,
+        "increment": record.increment,
         "status": record.status.value,
         "note": record.note,
         "issues": record.issues,
@@ -466,6 +496,7 @@ async def get_progress_history(task_index: int):
                 "record_id": r.record_id,
                 "record_date": r.record_date.strftime("%Y-%m-%d"),
                 "progress": r.progress,
+                "increment": r.increment,
                 "status": r.status.value,
                 "note": r.note,
                 "issues": r.issues,

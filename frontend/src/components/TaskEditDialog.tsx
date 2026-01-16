@@ -61,12 +61,12 @@ export function TaskEditDialog({ task, isOpen, onClose, onSave, mode }: TaskEdit
         progress: task.progress,
         status: task.status,
       });
-      // 重置进度记录字段
+      // 重置进度记录字段（loadHistory 会检查今天是否有记录）
       setNote('');
       setIssues('');
       setShowHistory(false);
-      // 加载历史记录
-      loadHistory(task.index);
+      // 加载历史记录，并自动填充今天的记录
+      loadHistoryAndTodayRecord(task.index);
     } else if (mode === 'add') {
       // 添加模式：重置表单
       setFormData({
@@ -92,10 +92,18 @@ export function TaskEditDialog({ task, isOpen, onClose, onSave, mode }: TaskEdit
     }
   }, [task, mode, isOpen]);
 
-  const loadHistory = async (taskIndex: number) => {
+  const loadHistoryAndTodayRecord = async (taskIndex: number) => {
     try {
       const records = await getProgressHistory(taskIndex);
       setHistory(records);
+
+      // 检查是否有今天的记录，如果有则填充到表单
+      const today = new Date().toISOString().split('T')[0];
+      const todayRecord = records.find(r => r.record_date === today);
+      if (todayRecord) {
+        setNote(todayRecord.note || '');
+        setIssues(todayRecord.issues || '');
+      }
     } catch (error) {
       console.error('加载历史记录失败:', error);
     }
@@ -108,19 +116,30 @@ export function TaskEditDialog({ task, isOpen, onClose, onSave, mode }: TaskEdit
     setIsSaving(true);
 
     try {
-      // 如果是编辑模式且有备注或问题，先记录进度
-      if (mode === 'edit' && task && (note.trim() || issues.trim())) {
-        await recordProgress({
+      let updatedFormData = { ...formData };
+
+      // 编辑模式下记录进度（自动联动实际日期）
+      if (mode === 'edit' && task) {
+        const result = await recordProgress({
           task_index: task.index,
           progress: formData.progress,
           status: formData.status,
           note: note.trim(),
           issues: issues.trim(),
         });
+
+        // 使用后端返回的更新数据（含自动设置的实际日期）
+        if (result.task) {
+          updatedFormData = {
+            ...updatedFormData,
+            actual_start: result.task.actual_start || updatedFormData.actual_start,
+            actual_end: result.task.actual_end || updatedFormData.actual_end,
+          };
+        }
       }
 
       // 保存任务
-      onSave(formData);
+      onSave(updatedFormData);
       onClose();
     } catch (error) {
       console.error('保存失败:', error);
@@ -130,8 +149,24 @@ export function TaskEditDialog({ task, isOpen, onClose, onSave, mode }: TaskEdit
     }
   };
 
-  const handleChange = (field: keyof typeof formData, value: string | number | boolean) => {
-    setFormData(prev => ({ ...prev, [field]: value }));
+  const handleChange = (field: keyof typeof formData, value: string | number | boolean | null) => {
+    setFormData(prev => {
+      const newData = { ...prev, [field]: value };
+
+      // 进度改变时自动更新状态（除非当前是"暂停"状态）
+      if (field === 'progress' && prev.status !== '暂停') {
+        const progress = value as number;
+        if (progress === 0) {
+          newData.status = '未开始';
+        } else if (progress === 100) {
+          newData.status = '已完成';
+        } else {
+          newData.status = '进行中';
+        }
+      }
+
+      return newData;
+    });
   };
 
   return (
@@ -262,6 +297,94 @@ export function TaskEditDialog({ task, isOpen, onClose, onSave, mode }: TaskEdit
                 </label>
               </div>
             </div>
+
+            {/* 日期设置区域 - 仅编辑模式显示 */}
+            {mode === 'edit' && (
+              <div className="mt-6 pt-4 border-t border-gray-200">
+                <h3 className="text-sm font-bold text-gray-900 mb-3">日期设置</h3>
+                <div className="grid grid-cols-2 gap-4">
+                  {/* 计划开始日期 */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      计划开始
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="date"
+                        className="input flex-1"
+                        value={formData.start_date || ''}
+                        onChange={(e) => {
+                          handleChange('start_date', e.target.value || null);
+                          if (e.target.value) handleChange('manual_start', true);
+                        }}
+                      />
+                      <label className="flex items-center text-xs text-gray-500">
+                        <input
+                          type="checkbox"
+                          checked={formData.manual_start}
+                          onChange={(e) => handleChange('manual_start', e.target.checked)}
+                          className="mr-1"
+                        />
+                        锁定
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* 计划结束日期 */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      计划结束
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="date"
+                        className="input flex-1"
+                        value={formData.end_date || ''}
+                        onChange={(e) => {
+                          handleChange('end_date', e.target.value || null);
+                          if (e.target.value) handleChange('manual_end', true);
+                        }}
+                      />
+                      <label className="flex items-center text-xs text-gray-500">
+                        <input
+                          type="checkbox"
+                          checked={formData.manual_end}
+                          onChange={(e) => handleChange('manual_end', e.target.checked)}
+                          className="mr-1"
+                        />
+                        锁定
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* 实际开始日期 */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      实际开始
+                    </label>
+                    <input
+                      type="date"
+                      className="input"
+                      value={formData.actual_start || ''}
+                      onChange={(e) => handleChange('actual_start', e.target.value || null)}
+                    />
+                  </div>
+
+                  {/* 实际结束日期 */}
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-1">
+                      实际结束
+                    </label>
+                    <input
+                      type="date"
+                      className="input"
+                      value={formData.actual_end || ''}
+                      onChange={(e) => handleChange('actual_end', e.target.value || null)}
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* 进度记录区域 - 仅编辑模式显示 */}
             {mode === 'edit' && (

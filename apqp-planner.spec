@@ -30,7 +30,7 @@ a = Analysis(
     datas=[
         ('backend/core', 'core'),
         ('backend/templates', 'templates'),
-        ('dist', 'dist'),
+        ('frontend/dist', 'dist'),
     ],
     hiddenimports=hiddenimports,
     hookspath=[],

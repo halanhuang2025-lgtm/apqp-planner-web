@@ -27,6 +27,7 @@ class ProgressRecord:
     status: TaskStatus          # 任务状态
     note: str = ""              # 当日备注
     issues: str = ""            # 遇到的问题
+    increment: int = 0          # 当日增量（相比上次记录）
     created_at: Optional[datetime] = None  # 创建时间
 
     def __post_init__(self):
@@ -43,6 +44,7 @@ class ProgressRecord:
             "status": self.status.value,
             "note": self.note,
             "issues": self.issues,
+            "increment": self.increment,
             "created_at": self.created_at.strftime("%Y-%m-%d %H:%M:%S") if self.created_at else ""
         }
 
@@ -64,6 +66,7 @@ class ProgressRecord:
             status=TaskStatus(data.get("status", "未开始")),
             note=data.get("note", ""),
             issues=data.get("issues", ""),
+            increment=data.get("increment", 0),
             created_at=created_at
         )
 

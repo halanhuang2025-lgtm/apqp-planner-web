@@ -42,6 +42,7 @@ export interface ScheduleResponse {
 export interface ProgressRecord {
   task_index: number;
   progress: number;
+  increment: number;  // 当日增量
   status: TaskStatus;
   note: string;
   issues: string;

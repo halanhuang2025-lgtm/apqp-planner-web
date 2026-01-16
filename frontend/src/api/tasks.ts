@@ -65,6 +65,7 @@ export const loadTemplate = async (): Promise<{ tasks: Task[]; message: string }
 export interface ExportRequest {
   project_name: string;
   start_date: string;
+  gantt_start_date?: string;  // 甘特图开始日期
   gantt_days?: number;
   exclude_weekends?: boolean;
   exclude_holidays?: boolean;
@@ -88,5 +89,5 @@ export const recordProgress = async (request: ProgressRecordRequest): Promise<{ 
 // 获取进度历史
 export const getProgressHistory = async (taskIndex: number): Promise<ProgressRecord[]> => {
   const response = await api.get(`/api/progress/history/${taskIndex}`);
-  return response.data;
+  return response.data.records || [];
 };

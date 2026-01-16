@@ -18,7 +18,7 @@ class ProgressManager:
                    note: str = "", issues: str = "",
                    record_date: Optional[datetime] = None) -> ProgressRecord:
         """
-        为任务添加进度记录
+        为任务添加或更新进度记录（同一天同一任务只保留一条记录）
 
         Args:
             task: 任务对象
@@ -29,24 +29,45 @@ class ProgressManager:
             record_date: 记录日期（默认今天）
 
         Returns:
-            创建的进度记录
+            创建或更新的进度记录
         """
-        record = ProgressRecord(
-            record_id=f"rec_{uuid.uuid4().hex[:8]}",
-            task_no=task.task_no,
-            record_date=record_date or datetime.now(),
-            progress=progress,
-            status=status,
-            note=note,
-            issues=issues
-        )
+        actual_date = record_date or datetime.now()
+        target_date = actual_date.date() if hasattr(actual_date, 'date') else actual_date
 
-        self.records[record.record_id] = record
+        # 检查同一天是否已有记录
+        existing_record = self._find_record_by_task_date(task.task_no, target_date)
+
+        # 计算当日增量：当前进度 - 前一天最后的进度
+        previous_progress = self._get_previous_day_progress(task.task_no, target_date)
+        increment = progress - previous_progress
+
+        if existing_record:
+            # 更新现有记录
+            existing_record.progress = progress
+            existing_record.status = status
+            existing_record.note = note
+            existing_record.issues = issues
+            existing_record.increment = increment
+            existing_record.created_at = datetime.now()
+            record = existing_record
+        else:
+            # 创建新记录
+            record = ProgressRecord(
+                record_id=f"rec_{uuid.uuid4().hex[:8]}",
+                task_no=task.task_no,
+                record_date=actual_date,
+                progress=progress,
+                status=status,
+                note=note,
+                issues=issues,
+                increment=increment
+            )
+            self.records[record.record_id] = record
+            task.progress_history.append(record.record_id)
 
         # 更新任务的当前进度和状态
         task.progress = progress
         task.status = status
-        task.progress_history.append(record.record_id)
 
         # 根据状态自动更新实际日期
         if status == TaskStatus.IN_PROGRESS and task.actual_start is None:
@@ -78,6 +99,29 @@ class ProgressManager:
         """获取任务的最新进度记录"""
         history = self.get_task_history(task_no)
         return history[-1] if history else None
+
+    def _find_record_by_task_date(self, task_no: str, date) -> Optional[ProgressRecord]:
+        """查找指定任务在指定日期的记录"""
+        for record in self.records.values():
+            if record.task_no == task_no:
+                record_date = record.record_date
+                if hasattr(record_date, 'date'):
+                    record_date = record_date.date()
+                if record_date == date:
+                    return record
+        return None
+
+    def _get_previous_day_progress(self, task_no: str, current_date) -> int:
+        """获取前一天（或之前最近一天）的进度"""
+        history = self.get_task_history(task_no)
+        previous_progress = 0
+        for record in history:
+            record_date = record.record_date
+            if hasattr(record_date, 'date'):
+                record_date = record_date.date()
+            if record_date < current_date:
+                previous_progress = record.progress
+        return previous_progress
 
     def delete_record(self, record_id: str) -> bool:
         """删除进度记录"""

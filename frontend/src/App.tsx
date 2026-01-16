@@ -36,6 +36,7 @@ function App() {
   } = useTaskStore();
 
   const [projectName, setProjectName] = useState('新产品开发项目');
+  const [ganttStartDate, setGanttStartDate] = useState('');  // 甘特图开始日期
 
   // 对话框状态
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -70,11 +71,19 @@ function App() {
     }
   };
 
-  // 格式化日期范围
+  // 格式化计划日期范围
   const formatDateRange = (task: Task) => {
     if (!task.start_date || !task.end_date) return '-';
     const start = task.manual_start ? `📌${task.start_date}` : task.start_date;
     const end = task.manual_end ? `${task.end_date}📌` : task.end_date;
+    return `${start} ~ ${end}`;
+  };
+
+  // 格式化实际日期范围
+  const formatActualDateRange = (task: Task) => {
+    if (!task.actual_start && !task.actual_end) return '-';
+    const start = task.actual_start || '?';
+    const end = task.actual_end || '进行中';
     return `${start} ~ ${end}`;
   };
 
@@ -136,9 +145,12 @@ function App() {
   // 导出 Excel
   const handleExportExcel = async () => {
     try {
+      // 甘特图开始日期：优先使用用户设置，否则使用排期日期
+      const effectiveGanttStart = ganttStartDate || scheduleDate;
       const blob = await exportExcel({
         project_name: projectName,
         start_date: scheduleDate,
+        gantt_start_date: effectiveGanttStart,
         gantt_days: 180,
         exclude_weekends: excludeWeekends,
         exclude_holidays: excludeHolidays,
@@ -273,6 +285,25 @@ function App() {
               排除法定节假日
             </label>
           </div>
+
+          {/* Excel 导出设置 */}
+          <div className="flex gap-4 mt-4 pt-4 border-t border-gray-200">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                甘特图开始日期
+              </label>
+              <input
+                type="date"
+                className="input"
+                value={ganttStartDate}
+                onChange={(e) => setGanttStartDate(e.target.value)}
+                placeholder="默认使用排期日期"
+              />
+            </div>
+            <div className="flex items-end text-xs text-gray-500">
+              留空则使用排期日期
+            </div>
+          </div>
         </div>
 
         {/* 任务列表卡片 */}
@@ -365,6 +396,7 @@ function App() {
                     <th className="w-20">主责人</th>
                     <th className="w-14">前置</th>
                     <th className="w-48">计划日期</th>
+                    <th className="w-48">实际日期</th>
                     <th className="w-20">进度</th>
                     <th className="w-14">差异</th>
                   </tr>
@@ -390,6 +422,7 @@ function App() {
                       <td>{task.owner}</td>
                       <td>{task.predecessor || '-'}</td>
                       <td className="text-xs">{formatDateRange(task)}</td>
+                      <td className="text-xs">{formatActualDateRange(task)}</td>
                       <td>
                         {task.progress}%
                         {getStatusShort(task.status) && ` (${getStatusShort(task.status)})`}

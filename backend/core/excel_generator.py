@@ -9,6 +9,7 @@ from openpyxl import Workbook
 from openpyxl.styles import Font, Alignment, Border, Side, PatternFill
 from openpyxl.utils import get_column_letter
 from openpyxl.formatting.rule import CellIsRule
+from openpyxl.comments import Comment
 
 from .scheduler import Task, Scheduler
 from .progress_manager import ProgressManager
@@ -43,6 +44,16 @@ class ExcelGenerator:
         # 实际行背景色（浅灰）
         self.actual_row_fill = PatternFill(start_color="FAFAFA", end_color="FAFAFA", fill_type="solid")
 
+        # 进度相关颜色
+        self.progress_pending_fill = PatternFill(start_color="E0E0E0", end_color="E0E0E0", fill_type="solid")  # 灰色-待填写
+        self.no_progress_fill = PatternFill(start_color="F39C12", end_color="F39C12", fill_type="solid")  # 橙色-无进度
+        self.issue_border = Border(
+            left=Side(style='medium', color='FF0000'),
+            right=Side(style='medium', color='FF0000'),
+            top=Side(style='medium', color='FF0000'),
+            bottom=Side(style='medium', color='FF0000')
+        )  # 红色边框-有问题
+
         self.thin_border = Border(
             left=Side(style='thin'),
             right=Side(style='thin'),
@@ -61,23 +72,27 @@ class ExcelGenerator:
                  gantt_days: int = 90,
                  exclude_weekends: bool = True,
                  exclude_holidays: bool = False,
-                 progress_manager: Optional[ProgressManager] = None) -> str:
+                 progress_manager: Optional[ProgressManager] = None,
+                 gantt_start_date: Optional[datetime] = None) -> str:
         """
         生成带甘特图的 Excel 文件
 
         Args:
             tasks: 任务列表
             project_name: 项目名称
-            start_date: 项目开始日期
+            start_date: 项目开始日期（用于排期计算）
             output_path: 输出文件路径
             gantt_days: 甘特图显示天数
             exclude_weekends: 是否排除周末计算工作日
             exclude_holidays: 是否排除节假日
             progress_manager: 进度管理器（可选，用于生成进度历史工作表）
+            gantt_start_date: 甘特图开始日期（默认使用 start_date）
 
         Returns:
             生成的文件路径
         """
+        # 甘特图开始日期，默认使用排期开始日期
+        effective_gantt_start = gantt_start_date or start_date
         # 计算任务日期
         scheduler = Scheduler(exclude_weekends=exclude_weekends,
                              exclude_holidays=exclude_holidays)
@@ -90,11 +105,11 @@ class ExcelGenerator:
         # 创建标题区域
         self._create_header(ws, project_name)
 
-        # 创建表头
-        self._create_table_header(ws, start_date, gantt_days)
+        # 创建表头（使用甘特图开始日期）
+        self._create_table_header(ws, effective_gantt_start, gantt_days)
 
-        # 填充任务数据（双行模式）
-        last_data_row = self._fill_tasks(ws, tasks, start_date, gantt_days)
+        # 填充任务数据（双行模式，使用甘特图开始日期）
+        last_data_row = self._fill_tasks(ws, tasks, effective_gantt_start, gantt_days, progress_manager)
 
         # 添加条件格式（工期差异列）
         self._add_conditional_formatting(ws, last_data_row)
@@ -194,9 +209,17 @@ class ExcelGenerator:
         ws.row_dimensions[4].height = 18
         ws.row_dimensions[5].height = 16
 
-    def _fill_tasks(self, ws, tasks: List[Task], start_date: datetime, gantt_days: int) -> int:
+    def _fill_tasks(self, ws, tasks: List[Task], start_date: datetime, gantt_days: int,
+                    progress_manager: Optional[ProgressManager] = None) -> int:
         """
         填充任务数据（双行模式：每个任务占2行）
+
+        Args:
+            ws: 工作表
+            tasks: 任务列表
+            start_date: 开始日期
+            gantt_days: 甘特图天数
+            progress_manager: 进度管理器（可选，用于关联进度记录）
 
         Returns:
             最后一个数据行的行号
@@ -347,33 +370,72 @@ class ExcelGenerator:
                 elif current_date.weekday() >= 5:
                     cell_plan.fill = self.weekend_fill
 
-                # 实际行甘特图
+                # 实际行甘特图（含进度记录关联）
                 cell_actual = ws.cell(row=actual_row, column=col)
                 cell_actual.border = self.thin_border
 
-                in_actual = (task.actual_start and
-                            task.actual_start.date() <= current_date.date())
+                # 查找当天的进度记录
+                day_record = self._find_record_for_date(progress_manager, task.task_no, current_date)
 
-                if in_actual:
-                    if task.actual_end:
-                        # 已完成：检查日期是否在实际范围内
-                        if current_date.date() <= task.actual_end.date():
-                            cell_actual.fill = self.gantt_complete_fill
-                        elif current_date.weekday() >= 5:
-                            cell_actual.fill = self.weekend_fill
-                        else:
-                            cell_actual.fill = self.actual_row_fill
+                # 判断当前日期是否在计划范围内
+                in_plan_range = (task.start_date and task.end_date and
+                                task.start_date.date() <= current_date.date() <= task.end_date.date())
+
+                # 实际行填充逻辑：
+                # 1. 有进度记录且增量 > 0 → 绿色 + 显示增量
+                # 2. 有进度记录但增量 <= 0（无进度）→ 橙色 + 显示"0"
+                # 3. 有问题记录 → 红色边框
+                # 4. 在计划范围内但无记录（漏填）→ 浅灰色
+                # 5. 周末 → 周末色
+                # 6. 其他 → 默认背景
+
+                if day_record:
+                    # 有当天的进度记录，获取增量
+                    increment = getattr(day_record, 'increment', 0)
+
+                    if increment > 0:
+                        # 有进度增量：绿色
+                        cell_actual.fill = self.gantt_complete_fill
+                        cell_actual.font = Font(name="微软雅黑", size=7, color="FFFFFF", bold=True)
+                        cell_actual.value = f"+{increment}%"
                     else:
-                        # 进行中：从实际开始到今天
-                        if current_date.date() <= datetime.now().date():
-                            cell_actual.fill = self.gantt_actual_fill
-                        elif current_date.weekday() >= 5:
-                            cell_actual.fill = self.weekend_fill
-                        else:
-                            cell_actual.fill = self.actual_row_fill
+                        # 无进度增量（增量 <= 0）：橙色
+                        cell_actual.fill = self.no_progress_fill
+                        cell_actual.font = Font(name="微软雅黑", size=7, color="FFFFFF", bold=True)
+                        cell_actual.value = f"{increment}%" if increment < 0 else "0"
+
+                    cell_actual.alignment = self.center_align
+
+                    # 添加批注
+                    comment_lines = []
+                    record_date_str = day_record.record_date.strftime('%Y-%m-%d') if hasattr(day_record.record_date, 'strftime') else str(day_record.record_date)
+                    comment_lines.append(f"日期: {record_date_str}")
+                    comment_lines.append(f"累计进度: {day_record.progress}%")
+                    comment_lines.append(f"当日增量: {'+' if increment > 0 else ''}{increment}%")
+                    comment_lines.append(f"状态: {day_record.status.value if hasattr(day_record.status, 'value') else day_record.status}")
+                    if day_record.note:
+                        comment_lines.append(f"备注: {day_record.note}")
+                    if day_record.issues:
+                        # 无进度原因或问题
+                        comment_lines.append(f"问题/原因: {day_record.issues}")
+
+                    comment_text = "\n".join(comment_lines)
+                    cell_actual.comment = Comment(comment_text, "APQP系统")
+                    cell_actual.comment.width = 250
+                    cell_actual.comment.height = 100
+
+                    # 有问题时添加红色边框
+                    if day_record.issues:
+                        cell_actual.border = self.issue_border
+
+                elif in_plan_range:
+                    # 在计划范围内但无进度记录：浅灰色（漏填/待填写）
+                    cell_actual.fill = self.progress_pending_fill
                 elif current_date.weekday() >= 5:
+                    # 周末
                     cell_actual.fill = self.weekend_fill
                 else:
+                    # 其他：默认背景
                     cell_actual.fill = self.actual_row_fill
 
             ws.row_dimensions[plan_row].height = 22
@@ -389,6 +451,44 @@ class ExcelGenerator:
         for start_r, end_r in milestone_rows:
             if end_r > start_r:
                 ws.merge_cells(f'A{start_r}:A{end_r}')
+
+        # 添加进度记录详情列（甘特图最右侧）
+        if progress_manager and progress_manager.records:
+            progress_col = gantt_start_col + gantt_days
+
+            # 添加表头
+            ws.merge_cells(start_row=3, start_column=progress_col, end_row=5, end_column=progress_col)
+            header_cell = ws.cell(row=3, column=progress_col, value="进度记录")
+            header_cell.font = Font(name="微软雅黑", size=10, bold=True, color="FFFFFF")
+            header_cell.fill = self.header_fill
+            header_cell.alignment = self.center_align
+            header_cell.border = self.thin_border
+            ws.column_dimensions[get_column_letter(progress_col)].width = 28
+
+            # 填充每个任务的最近进度记录
+            task_row = 6
+            for task in tasks:
+                recent_records = self._get_recent_records_summary(progress_manager, task.task_no, limit=3)
+                if recent_records:
+                    summary_lines = []
+                    for r in recent_records:
+                        date_str = r.record_date.strftime('%m-%d') if hasattr(r.record_date, 'strftime') else str(r.record_date)[:5]
+                        note_preview = r.note[:8] + "..." if r.note and len(r.note) > 8 else (r.note or "")
+                        summary_lines.append(f"{date_str}: {r.progress}% {note_preview}")
+
+                    summary_text = "\n".join(summary_lines)
+                else:
+                    summary_text = ""
+
+                # 合并计划行和实际行的进度记录列
+                ws.merge_cells(start_row=task_row, start_column=progress_col,
+                              end_row=task_row + 1, end_column=progress_col)
+                summary_cell = ws.cell(row=task_row, column=progress_col, value=summary_text)
+                summary_cell.font = Font(name="微软雅黑", size=8)
+                summary_cell.alignment = Alignment(horizontal='left', vertical='top', wrap_text=True)
+                summary_cell.border = self.thin_border
+
+                task_row += 2
 
         return current_row - 1
 
@@ -426,15 +526,20 @@ class ExcelGenerator:
         cell1.fill = self.gantt_plan_fill
         ws.cell(row=legend_row, column=4, value="计划进度").font = self.normal_font
 
-        # 实际进行中 - 红色
+        # 已完成部分 - 绿色
         cell2 = ws.cell(row=legend_row, column=6)
-        cell2.fill = self.gantt_actual_fill
-        ws.cell(row=legend_row, column=7, value="实际进行中").font = self.normal_font
+        cell2.fill = self.gantt_complete_fill
+        ws.cell(row=legend_row, column=7, value="已完成部分").font = self.normal_font
 
-        # 已完成 - 绿色
+        # 未完成部分 - 灰色
         cell3 = ws.cell(row=legend_row, column=9)
-        cell3.fill = self.gantt_complete_fill
-        ws.cell(row=legend_row, column=10, value="已完成").font = self.normal_font
+        cell3.fill = self.progress_pending_fill
+        ws.cell(row=legend_row, column=10, value="未完成部分").font = self.normal_font
+
+        # 进行中 - 红色
+        cell4 = ws.cell(row=legend_row, column=12)
+        cell4.fill = self.gantt_actual_fill
+        ws.cell(row=legend_row, column=13, value="进行中").font = self.normal_font
 
         # 进度偏差说明（实际结束 - 计划结束）
         legend_row2 = legend_row + 1
@@ -451,6 +556,52 @@ class ExcelGenerator:
         cell6 = ws.cell(row=legend_row2, column=9)
         cell6.fill = self.early_fill
         ws.cell(row=legend_row2, column=10, value="<0 提前").font = self.normal_font
+
+    def _find_record_for_date(self, progress_manager: Optional[ProgressManager],
+                               task_no: str, date: datetime) -> Optional[dict]:
+        """
+        查找指定任务在指定日期的进度记录
+
+        Args:
+            progress_manager: 进度管理器
+            task_no: 任务编号
+            date: 查询日期
+
+        Returns:
+            进度记录字典或 None
+        """
+        if not progress_manager:
+            return None
+
+        for record in progress_manager.records.values():
+            if record.task_no == task_no:
+                record_date = record.record_date
+                if hasattr(record_date, 'date'):
+                    record_date = record_date.date()
+                target_date = date.date() if hasattr(date, 'date') else date
+                if record_date == target_date:
+                    return record
+        return None
+
+    def _get_recent_records_summary(self, progress_manager: Optional[ProgressManager],
+                                     task_no: str, limit: int = 3) -> list:
+        """
+        获取任务最近N条记录摘要
+
+        Args:
+            progress_manager: 进度管理器
+            task_no: 任务编号
+            limit: 返回记录数量
+
+        Returns:
+            最近记录列表
+        """
+        if not progress_manager:
+            return []
+
+        task_records = [r for r in progress_manager.records.values() if r.task_no == task_no]
+        task_records.sort(key=lambda r: r.record_date, reverse=True)
+        return task_records[:limit]
 
     def _create_progress_history_sheet(self, wb: Workbook, tasks: List[Task],
                                        progress_manager: ProgressManager):
