@@ -19,6 +19,11 @@ export interface Task {
   excluded: boolean;
   progress: number;
   status: string;
+  // RACI 职责分配
+  responsible: string[];   // R - 负责人（执行者）
+  accountable: string;     // A - 批准人（最终负责）
+  consulted: string[];     // C - 咨询人
+  informed: string[];      // I - 知会人
 }
 
 export type TaskStatus = '未开始' | '进行中' | '已完成' | '暂停';

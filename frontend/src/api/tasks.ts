@@ -149,3 +149,58 @@ export const updateCategory = async (oldName: string, newName: string): Promise<
   const response = await api.put(`/api/categories/${encodeURIComponent(oldName)}`, { name: newName });
   return response.data.categories;
 };
+
+// ============ 人员库管理 API ============
+
+export interface Person {
+  id: string;
+  name: string;
+  department: string;
+}
+
+export interface PersonnelResponse {
+  personnel: Person[];
+  departments: string[];
+}
+
+// 获取人员库列表
+export const getPersonnel = async (): Promise<PersonnelResponse> => {
+  const response = await api.get('/api/personnel');
+  return response.data;
+};
+
+// 添加人员
+export const addPerson = async (name: string, department: string): Promise<Person[]> => {
+  const response = await api.post('/api/personnel', { name, department });
+  return response.data.personnel;
+};
+
+// 更新人员
+export const updatePerson = async (personId: string, name: string, department: string): Promise<Person[]> => {
+  const response = await api.put(`/api/personnel/${encodeURIComponent(personId)}`, { name, department });
+  return response.data.personnel;
+};
+
+// 删除人员
+export const deletePerson = async (personId: string): Promise<Person[]> => {
+  const response = await api.delete(`/api/personnel/${encodeURIComponent(personId)}`);
+  return response.data.personnel;
+};
+
+// 获取部门列表
+export const getDepartments = async (): Promise<string[]> => {
+  const response = await api.get('/api/departments');
+  return response.data.departments;
+};
+
+// 添加部门
+export const addDepartment = async (name: string): Promise<string[]> => {
+  const response = await api.post('/api/departments', { name });
+  return response.data.departments;
+};
+
+// 删除部门
+export const deleteDepartment = async (name: string): Promise<string[]> => {
+  const response = await api.delete(`/api/departments/${encodeURIComponent(name)}`);
+  return response.data.departments;
+};

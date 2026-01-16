@@ -91,6 +91,11 @@ class Task:
     progress: int = 0                                      # 当前完成百分比 (0-100)
     status: TaskStatus = TaskStatus.NOT_STARTED            # 当前状态
     progress_history: List[str] = field(default_factory=list)  # 进度记录ID列表
+    # RACI 职责分配
+    responsible: List[str] = field(default_factory=list)   # R - 负责人（执行者）
+    accountable: str = ""                                  # A - 批准人（最终负责）
+    consulted: List[str] = field(default_factory=list)     # C - 咨询人
+    informed: List[str] = field(default_factory=list)      # I - 知会人
 
     def to_dict(self) -> dict:
         """转换为字典"""
@@ -122,6 +127,11 @@ class Task:
         result["status"] = self.status.value
         if self.progress_history:
             result["progress_history"] = self.progress_history
+        # 保存 RACI 职责分配
+        result["responsible"] = self.responsible
+        result["accountable"] = self.accountable
+        result["consulted"] = self.consulted
+        result["informed"] = self.informed
         return result
 
     @classmethod
@@ -157,6 +167,11 @@ class Task:
         except ValueError:
             task.status = TaskStatus.NOT_STARTED
         task.progress_history = data.get("progress_history", [])
+        # 加载 RACI 职责分配
+        task.responsible = data.get("responsible", [])
+        task.accountable = data.get("accountable", "")
+        task.consulted = data.get("consulted", [])
+        task.informed = data.get("informed", [])
         return task
 
 

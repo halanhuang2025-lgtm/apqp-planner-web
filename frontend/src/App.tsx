@@ -14,6 +14,7 @@ import { ProjectCompareView } from './components/ProjectCompareView';
 import { ProjectOverview } from './components/ProjectOverview';
 import { MilestoneManager } from './components/MilestoneManager';
 import { CategoryManager } from './components/CategoryManager';
+import { PersonnelManager } from './components/PersonnelManager';
 import { exportExcel } from './api/tasks';
 import api from './api/client';
 import type { Task } from './types/task';
@@ -60,6 +61,7 @@ function App() {
   const [showOverview, setShowOverview] = useState(false);  // 项目总览
   const [showMilestoneManager, setShowMilestoneManager] = useState(false);  // 里程碑管理
   const [showCategoryManager, setShowCategoryManager] = useState(false);  // 机器分类管理
+  const [showPersonnelManager, setShowPersonnelManager] = useState(false);  // 人员库管理
 
   // 对话框状态
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -245,6 +247,12 @@ function App() {
             className="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm transition-colors"
           >
             机器分类
+          </button>
+          <button
+            onClick={() => setShowPersonnelManager(true)}
+            className="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm transition-colors"
+          >
+            人员库
           </button>
         </div>
         <button
@@ -463,7 +471,7 @@ function App() {
                     <th className="w-14">编号</th>
                     <th className="w-44">任务名称</th>
                     <th className="w-14">工期</th>
-                    <th className="w-20">主责人</th>
+                    <th className="w-32">RACI</th>
                     <th className="w-14">前置</th>
                     <th className="w-48">计划日期</th>
                     <th className="w-48">实际日期</th>
@@ -489,7 +497,28 @@ function App() {
                         {task.excluded ? `[排除] ${task.name}` : task.name}
                       </td>
                       <td>{task.duration}天</td>
-                      <td>{task.owner}</td>
+                      <td className="text-xs">
+                        {task.responsible?.length > 0 && (
+                          <span className="inline-block px-1 bg-blue-100 text-blue-700 rounded mr-1" title="负责人">
+                            R:{task.responsible.join(',')}
+                          </span>
+                        )}
+                        {task.accountable && (
+                          <span className="inline-block px-1 bg-red-100 text-red-700 rounded mr-1" title="批准人">
+                            A:{task.accountable}
+                          </span>
+                        )}
+                        {task.consulted?.length > 0 && (
+                          <span className="inline-block px-1 bg-yellow-100 text-yellow-700 rounded mr-1" title="咨询人">
+                            C:{task.consulted.join(',')}
+                          </span>
+                        )}
+                        {task.informed?.length > 0 && (
+                          <span className="inline-block px-1 bg-green-100 text-green-700 rounded" title="知会人">
+                            I:{task.informed.join(',')}
+                          </span>
+                        )}
+                      </td>
                       <td>{task.predecessor || '-'}</td>
                       <td className="text-xs">{formatDateRange(task)}</td>
                       <td className="text-xs">{formatActualDateRange(task)}</td>
@@ -572,6 +601,11 @@ function App() {
       <CategoryManager
         isOpen={showCategoryManager}
         onClose={() => setShowCategoryManager(false)}
+      />
+
+      <PersonnelManager
+        isOpen={showPersonnelManager}
+        onClose={() => setShowPersonnelManager(false)}
       />
     </div>
   );

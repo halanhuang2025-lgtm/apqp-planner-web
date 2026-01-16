@@ -6,7 +6,8 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import type { Task, ProgressRecord } from '../types/task';
-import { recordProgress, getProgressHistory } from '../api/tasks';
+import { recordProgress, getProgressHistory, getPersonnel } from '../api/tasks';
+import type { Person } from '../api/tasks';
 import { useTaskStore } from '../stores/taskStore';
 
 interface TaskEditDialogProps {
@@ -37,6 +38,11 @@ export function TaskEditDialog({ task, isOpen, onClose, onSave, mode }: TaskEdit
     excluded: false,
     progress: 0,
     status: '未开始',
+    // RACI 职责分配
+    responsible: [],
+    accountable: '',
+    consulted: [],
+    informed: [],
   });
 
   // 进度记录字段
@@ -45,13 +51,30 @@ export function TaskEditDialog({ task, isOpen, onClose, onSave, mode }: TaskEdit
   const [history, setHistory] = useState<ProgressRecord[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+  const [initialProgress, setInitialProgress] = useState(0);
+  const [initialStatus, setInitialStatus] = useState('未开始');
+  const [initialNote, setInitialNote] = useState('');
+  const [initialIssues, setInitialIssues] = useState('');
 
-  // 加载里程碑列表
+  // 人员库
+  const [personnel, setPersonnel] = useState<Person[]>([]);
+
+  // 加载里程碑列表和人员库
   useEffect(() => {
     if (isOpen) {
       fetchMilestones();
+      loadPersonnel();
     }
   }, [isOpen, fetchMilestones]);
+
+  const loadPersonnel = async () => {
+    try {
+      const data = await getPersonnel();
+      setPersonnel(data.personnel);
+    } catch (error) {
+      console.error('加载人员库失败:', error);
+    }
+  };
 
   // 当 task 变化时更新表单
   useEffect(() => {
@@ -72,10 +95,19 @@ export function TaskEditDialog({ task, isOpen, onClose, onSave, mode }: TaskEdit
         excluded: task.excluded,
         progress: task.progress,
         status: task.status,
+        // RACI 职责分配
+        responsible: task.responsible || [],
+        accountable: task.accountable || '',
+        consulted: task.consulted || [],
+        informed: task.informed || [],
       });
+      setInitialProgress(task.progress);
+      setInitialStatus(task.status);
       // 重置进度记录字段（loadHistory 会检查今天是否有记录）
       setNote('');
       setIssues('');
+      setInitialNote('');
+      setInitialIssues('');
       setShowHistory(false);
       // 加载历史记录，并自动填充今天的记录
       loadHistoryAndTodayRecord(task.index);
@@ -97,9 +129,18 @@ export function TaskEditDialog({ task, isOpen, onClose, onSave, mode }: TaskEdit
         excluded: false,
         progress: 0,
         status: '未开始',
+        // RACI 职责分配
+        responsible: [],
+        accountable: '',
+        consulted: [],
+        informed: [],
       });
+      setInitialProgress(0);
+      setInitialStatus('未开始');
       setNote('');
       setIssues('');
+      setInitialNote('');
+      setInitialIssues('');
       setHistory([]);
     }
   }, [task, mode, isOpen]);
@@ -113,8 +154,15 @@ export function TaskEditDialog({ task, isOpen, onClose, onSave, mode }: TaskEdit
       const today = new Date().toISOString().split('T')[0];
       const todayRecord = records.find(r => r.record_date === today);
       if (todayRecord) {
-        setNote(todayRecord.note || '');
-        setIssues(todayRecord.issues || '');
+        const recordNote = todayRecord.note || '';
+        const recordIssues = todayRecord.issues || '';
+        setNote(recordNote);
+        setIssues(recordIssues);
+        setInitialNote(recordNote);
+        setInitialIssues(recordIssues);
+      } else {
+        setInitialNote('');
+        setInitialIssues('');
       }
     } catch (error) {
       console.error('加载历史记录失败:', error);
@@ -149,23 +197,37 @@ export function TaskEditDialog({ task, isOpen, onClose, onSave, mode }: TaskEdit
     try {
       let updatedFormData = { ...formData };
 
+      // 自动从 RACI 负责人设置 owner（向后兼容）
+      if (formData.responsible.length > 0) {
+        updatedFormData.owner = formData.responsible[0];
+      } else if (formData.accountable) {
+        updatedFormData.owner = formData.accountable;
+      }
+
       // 编辑模式下记录进度（自动联动实际日期）
       if (mode === 'edit' && task) {
-        const result = await recordProgress({
-          task_index: task.index,
-          progress: formData.progress,
-          status: formData.status,
-          note: note.trim(),
-          issues: issues.trim(),
-        });
+        const trimmedNote = note.trim();
+        const trimmedIssues = issues.trim();
+        const hasProgressChange = formData.progress !== initialProgress || formData.status !== initialStatus;
+        const hasNoteChange = trimmedNote !== initialNote || trimmedIssues !== initialIssues;
 
-        // 使用后端返回的更新数据（含自动设置的实际日期）
-        if (result.task) {
-          updatedFormData = {
-            ...updatedFormData,
-            actual_start: result.task.actual_start || updatedFormData.actual_start,
-            actual_end: result.task.actual_end || updatedFormData.actual_end,
-          };
+        if (hasProgressChange || hasNoteChange) {
+          const result = await recordProgress({
+            task_index: task.index,
+            progress: formData.progress,
+            status: formData.status,
+            note: trimmedNote,
+            issues: trimmedIssues,
+          });
+
+          // 使用后端返回的更新数据（含自动设置的实际日期）
+          if (result.task) {
+            updatedFormData = {
+              ...updatedFormData,
+              actual_start: result.task.actual_start || updatedFormData.actual_start,
+              actual_end: result.task.actual_end || updatedFormData.actual_end,
+            };
+          }
         }
       }
 
@@ -180,7 +242,7 @@ export function TaskEditDialog({ task, isOpen, onClose, onSave, mode }: TaskEdit
     }
   };
 
-  const handleChange = (field: keyof typeof formData, value: string | number | boolean | null) => {
+  const handleChange = (field: keyof typeof formData, value: string | number | boolean | null | string[]) => {
     setFormData(prev => {
       const newData = { ...prev, [field]: value };
 
@@ -283,20 +345,6 @@ export function TaskEditDialog({ task, isOpen, onClose, onSave, mode }: TaskEdit
                 />
               </div>
 
-              {/* 主责人 */}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">
-                  主责人
-                </label>
-                <input
-                  type="text"
-                  className="input"
-                  value={formData.owner}
-                  onChange={(e) => handleChange('owner', e.target.value)}
-                  placeholder="负责人姓名或角色"
-                />
-              </div>
-
               {/* 前置任务 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -323,6 +371,130 @@ export function TaskEditDialog({ task, isOpen, onClose, onSave, mode }: TaskEdit
                 <label htmlFor="excluded" className="text-sm text-gray-700">
                   排除此任务
                 </label>
+              </div>
+            </div>
+
+            {/* RACI 职责分配 */}
+            <div className="mt-6 pt-4 border-t border-gray-200">
+              <h3 className="text-sm font-bold text-gray-900 mb-3">
+                RACI 职责分配
+                <span className="ml-2 text-xs font-normal text-gray-500">
+                  (R-负责 A-批准 C-咨询 I-知会)
+                </span>
+              </h3>
+              <div className="grid grid-cols-2 gap-4">
+                {/* R - 负责人（执行者）*/}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <span className="inline-block w-5 h-5 bg-blue-500 text-white text-xs rounded mr-1 text-center leading-5">R</span>
+                    负责人（执行者）
+                  </label>
+                  <div className="border rounded-lg p-2 max-h-32 overflow-y-auto bg-gray-50">
+                    {personnel.length === 0 ? (
+                      <span className="text-gray-400 text-sm">暂无人员</span>
+                    ) : (
+                      personnel.map((person) => (
+                        <label key={person.id} className="flex items-center text-sm py-1 hover:bg-gray-100 px-1 rounded cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.responsible.includes(person.name)}
+                            onChange={(e) => {
+                              const newList = e.target.checked
+                                ? [...formData.responsible, person.name]
+                                : formData.responsible.filter(n => n !== person.name);
+                              handleChange('responsible', newList);
+                            }}
+                            className="mr-2"
+                          />
+                          {person.name}
+                          {person.department && <span className="text-gray-400 ml-1">({person.department})</span>}
+                        </label>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* A - 批准人（最终负责）*/}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <span className="inline-block w-5 h-5 bg-red-500 text-white text-xs rounded mr-1 text-center leading-5">A</span>
+                    批准人（最终负责）
+                  </label>
+                  <select
+                    className="input"
+                    value={formData.accountable}
+                    onChange={(e) => handleChange('accountable', e.target.value)}
+                  >
+                    <option value="">请选择</option>
+                    {personnel.map((person) => (
+                      <option key={person.id} value={person.name}>
+                        {person.name}{person.department ? ` (${person.department})` : ''}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* C - 咨询人 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <span className="inline-block w-5 h-5 bg-yellow-500 text-white text-xs rounded mr-1 text-center leading-5">C</span>
+                    咨询人
+                  </label>
+                  <div className="border rounded-lg p-2 max-h-32 overflow-y-auto bg-gray-50">
+                    {personnel.length === 0 ? (
+                      <span className="text-gray-400 text-sm">暂无人员</span>
+                    ) : (
+                      personnel.map((person) => (
+                        <label key={person.id} className="flex items-center text-sm py-1 hover:bg-gray-100 px-1 rounded cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.consulted.includes(person.name)}
+                            onChange={(e) => {
+                              const newList = e.target.checked
+                                ? [...formData.consulted, person.name]
+                                : formData.consulted.filter(n => n !== person.name);
+                              handleChange('consulted', newList);
+                            }}
+                            className="mr-2"
+                          />
+                          {person.name}
+                          {person.department && <span className="text-gray-400 ml-1">({person.department})</span>}
+                        </label>
+                      ))
+                    )}
+                  </div>
+                </div>
+
+                {/* I - 知会人 */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    <span className="inline-block w-5 h-5 bg-green-500 text-white text-xs rounded mr-1 text-center leading-5">I</span>
+                    知会人
+                  </label>
+                  <div className="border rounded-lg p-2 max-h-32 overflow-y-auto bg-gray-50">
+                    {personnel.length === 0 ? (
+                      <span className="text-gray-400 text-sm">暂无人员</span>
+                    ) : (
+                      personnel.map((person) => (
+                        <label key={person.id} className="flex items-center text-sm py-1 hover:bg-gray-100 px-1 rounded cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={formData.informed.includes(person.name)}
+                            onChange={(e) => {
+                              const newList = e.target.checked
+                                ? [...formData.informed, person.name]
+                                : formData.informed.filter(n => n !== person.name);
+                              handleChange('informed', newList);
+                            }}
+                            className="mr-2"
+                          />
+                          {person.name}
+                          {person.department && <span className="text-gray-400 ml-1">({person.department})</span>}
+                        </label>
+                      ))
+                    )}
+                  </div>
+                </div>
               </div>
             </div>
 

@@ -5,6 +5,7 @@ FastAPI 服务入口
 
 import os
 import sys
+import json
 import webbrowser
 import threading
 from pathlib import Path
@@ -79,6 +80,16 @@ class AppState:
         "其他",
     ]
 
+    # 默认部门列表
+    DEFAULT_DEPARTMENTS = [
+        "研发部",
+        "工程部",
+        "生产部",
+        "品质部",
+        "采购部",
+        "销售部",
+    ]
+
     def __init__(self):
         self.project_manager = ProjectManager()
         self.config_manager = ConfigManager()
@@ -91,6 +102,10 @@ class AppState:
 
         # 机器分类（全局配置）
         self.categories: List[str] = self._load_categories()
+
+        # 人员库（全局配置）
+        self.personnel: List[dict] = self._load_personnel()
+        self.departments: List[str] = self._load_departments()
 
     def _get_categories_file(self) -> Path:
         """获取机器分类配置文件路径"""
@@ -113,6 +128,45 @@ class AppState:
         categories_file = self._get_categories_file()
         data = {"version": "1.0", "categories": self.categories}
         with open(categories_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+
+    def _get_personnel_file(self) -> Path:
+        """获取人员库配置文件路径"""
+        return self.project_manager.config_dir / "personnel.json"
+
+    def _load_personnel(self) -> List[dict]:
+        """加载人员库配置"""
+        personnel_file = self._get_personnel_file()
+        if personnel_file.exists():
+            try:
+                with open(personnel_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    return data.get("personnel", [])
+            except (json.JSONDecodeError, KeyError):
+                pass
+        return []
+
+    def _load_departments(self) -> List[str]:
+        """加载部门列表"""
+        personnel_file = self._get_personnel_file()
+        if personnel_file.exists():
+            try:
+                with open(personnel_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    return data.get("departments", self.DEFAULT_DEPARTMENTS.copy())
+            except (json.JSONDecodeError, KeyError):
+                pass
+        return self.DEFAULT_DEPARTMENTS.copy()
+
+    def _save_personnel(self):
+        """保存人员库配置"""
+        personnel_file = self._get_personnel_file()
+        data = {
+            "version": "1.0",
+            "departments": self.departments,
+            "personnel": self.personnel
+        }
+        with open(personnel_file, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
 
     def ensure_project_loaded(self):
@@ -187,6 +241,11 @@ class TaskModel(BaseModel):
     excluded: bool = False
     progress: int = 0
     status: str = "未开始"
+    # RACI 职责分配
+    responsible: List[str] = []   # R - 负责人（执行者）
+    accountable: str = ""         # A - 批准人（最终负责）
+    consulted: List[str] = []     # C - 咨询人
+    informed: List[str] = []      # I - 知会人
 
     class Config:
         from_attributes = True
@@ -223,6 +282,11 @@ def task_to_model(task: Task, index: int) -> dict:
         "excluded": task.excluded,
         "progress": task.progress,
         "status": task.status.value if hasattr(task.status, 'value') else str(task.status),
+        # RACI 职责分配
+        "responsible": task.responsible,
+        "accountable": task.accountable,
+        "consulted": task.consulted,
+        "informed": task.informed,
     }
 
 def model_to_task(data: TaskModel) -> Task:
@@ -259,6 +323,12 @@ def model_to_task(data: TaskModel) -> Task:
         "暂停": TaskStatus.PAUSED,
     }
     task.status = status_map.get(data.status, TaskStatus.NOT_STARTED)
+
+    # 设置 RACI 职责分配
+    task.responsible = data.responsible
+    task.accountable = data.accountable
+    task.consulted = data.consulted
+    task.informed = data.informed
 
     return task
 
@@ -804,6 +874,153 @@ async def update_category(name: str, request: CategoryRequest):
     app_state._save_categories()
 
     return {"categories": app_state.categories, "message": "分类更新成功"}
+
+
+# ============ 人员库管理 API ============
+
+class PersonnelRequest(BaseModel):
+    """人员请求"""
+    name: str
+    department: str = ""
+
+
+class DepartmentRequest(BaseModel):
+    """部门请求"""
+    name: str
+
+
+@app.get("/api/personnel")
+async def get_personnel():
+    """获取人员库列表"""
+    return {
+        "personnel": app_state.personnel,
+        "departments": app_state.departments
+    }
+
+
+@app.post("/api/personnel")
+async def add_personnel(request: PersonnelRequest):
+    """添加人员"""
+    import uuid
+
+    name = request.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="姓名不能为空")
+
+    # 检查是否已存在同名人员
+    for p in app_state.personnel:
+        if p["name"] == name:
+            raise HTTPException(status_code=400, detail="人员已存在")
+
+    person = {
+        "id": f"person_{uuid.uuid4().hex[:8]}",
+        "name": name,
+        "department": request.department.strip()
+    }
+    app_state.personnel.append(person)
+    app_state._save_personnel()
+
+    return {"personnel": app_state.personnel, "message": "人员添加成功"}
+
+
+@app.put("/api/personnel/{person_id}")
+async def update_personnel(person_id: str, request: PersonnelRequest):
+    """更新人员信息"""
+    import urllib.parse
+    person_id = urllib.parse.unquote(person_id)
+
+    # 查找人员
+    person = None
+    for p in app_state.personnel:
+        if p["id"] == person_id:
+            person = p
+            break
+
+    if not person:
+        raise HTTPException(status_code=404, detail="人员不存在")
+
+    name = request.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="姓名不能为空")
+
+    # 检查是否有其他同名人员
+    for p in app_state.personnel:
+        if p["name"] == name and p["id"] != person_id:
+            raise HTTPException(status_code=400, detail="该姓名已被使用")
+
+    # 更新人员信息
+    person["name"] = name
+    person["department"] = request.department.strip()
+    app_state._save_personnel()
+
+    return {"personnel": app_state.personnel, "message": "人员更新成功"}
+
+
+@app.delete("/api/personnel/{person_id}")
+async def delete_personnel(person_id: str):
+    """删除人员"""
+    import urllib.parse
+    person_id = urllib.parse.unquote(person_id)
+
+    # 查找人员
+    person = None
+    for p in app_state.personnel:
+        if p["id"] == person_id:
+            person = p
+            break
+
+    if not person:
+        raise HTTPException(status_code=404, detail="人员不存在")
+
+    app_state.personnel.remove(person)
+    app_state._save_personnel()
+
+    return {"personnel": app_state.personnel, "message": "人员删除成功"}
+
+
+@app.get("/api/departments")
+async def get_departments():
+    """获取部门列表"""
+    return {"departments": app_state.departments}
+
+
+@app.post("/api/departments")
+async def add_department(request: DepartmentRequest):
+    """添加部门"""
+    name = request.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="部门名称不能为空")
+
+    if name in app_state.departments:
+        raise HTTPException(status_code=400, detail="部门已存在")
+
+    app_state.departments.append(name)
+    app_state._save_personnel()
+
+    return {"departments": app_state.departments, "message": "部门添加成功"}
+
+
+@app.delete("/api/departments/{name}")
+async def delete_department(name: str):
+    """删除部门"""
+    import urllib.parse
+    name = urllib.parse.unquote(name)
+
+    if name not in app_state.departments:
+        raise HTTPException(status_code=404, detail="部门不存在")
+
+    # 检查是否有人员在使用该部门
+    for person in app_state.personnel:
+        if person.get("department") == name:
+            raise HTTPException(
+                status_code=400,
+                detail=f"无法删除：人员 '{person['name']}' 属于此部门"
+            )
+
+    app_state.departments.remove(name)
+    app_state._save_personnel()
+
+    return {"departments": app_state.departments, "message": "部门删除成功"}
 
 
 # ============ Excel 导出 API ============
