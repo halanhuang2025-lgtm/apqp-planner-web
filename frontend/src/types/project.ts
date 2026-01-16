@@ -16,10 +16,19 @@ export interface Project {
   created_at: string;
   updated_at: string;
   status: ProjectStatus;
+  // 项目详细属性
+  machine_no: string;        // 整机编号
+  customer: string;          // 客户名称
+  model: string;             // 机型
+  category: string;          // 机器分类
+  specifications: string;    // 规格
+  custom_requirements: string;  // 定制内容
+  // 排期设置
   schedule_mode: ScheduleMode;
   schedule_date: string | null;
   exclude_weekends: boolean;
   exclude_holidays: boolean;
+  // 统计信息
   task_count: number;
   completion_rate: number;
 }
@@ -29,6 +38,13 @@ export interface CreateProjectRequest {
   name: string;
   description?: string;
   template_id?: string;
+  // 项目详细属性
+  machine_no?: string;
+  customer?: string;
+  model?: string;
+  category?: string;
+  specifications?: string;
+  custom_requirements?: string;
 }
 
 // 更新项目请求
@@ -36,6 +52,14 @@ export interface UpdateProjectRequest {
   name?: string;
   description?: string;
   status?: ProjectStatus;
+  // 项目详细属性
+  machine_no?: string;
+  customer?: string;
+  model?: string;
+  category?: string;
+  specifications?: string;
+  custom_requirements?: string;
+  // 排期设置
   schedule_mode?: ScheduleMode;
   schedule_date?: string | null;
   exclude_weekends?: boolean;

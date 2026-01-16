@@ -13,6 +13,7 @@ import { CreateProjectDialog } from './components/CreateProjectDialog';
 import { ProjectCompareView } from './components/ProjectCompareView';
 import { ProjectOverview } from './components/ProjectOverview';
 import { MilestoneManager } from './components/MilestoneManager';
+import { CategoryManager } from './components/CategoryManager';
 import { exportExcel } from './api/tasks';
 import api from './api/client';
 import type { Task } from './types/task';
@@ -58,6 +59,7 @@ function App() {
   const [ganttStartDate, setGanttStartDate] = useState('');  // 甘特图开始日期
   const [showOverview, setShowOverview] = useState(false);  // 项目总览
   const [showMilestoneManager, setShowMilestoneManager] = useState(false);  // 里程碑管理
+  const [showCategoryManager, setShowCategoryManager] = useState(false);  // 机器分类管理
 
   // 对话框状态
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -77,11 +79,20 @@ function App() {
     }
   }, [currentProject?.id]);
 
-  // 页面关闭时退出服务器
+  // 页面关闭时退出服务器（仅在桌面应用模式下）
+  // 注意：刷新页面也会触发 beforeunload，所以只在非开发模式下启用
   useEffect(() => {
+    // 检测是否为桌面应用模式（通过 file:// 协议或特定标识）
+    const isDesktopApp = window.location.protocol === 'file:' ||
+                         window.location.hostname === '127.0.0.1';
+
+    // 开发模式下不自动关闭服务器（避免刷新时误关闭）
+    if (import.meta.env.DEV) return;
+
     const handleBeforeUnload = () => {
-      // 使用 sendBeacon 确保请求发送
-      navigator.sendBeacon('/api/shutdown', '');
+      if (isDesktopApp) {
+        navigator.sendBeacon('/api/shutdown', '');
+      }
     };
 
     window.addEventListener('beforeunload', handleBeforeUnload);
@@ -228,6 +239,12 @@ function App() {
             className="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm transition-colors"
           >
             里程碑
+          </button>
+          <button
+            onClick={() => setShowCategoryManager(true)}
+            className="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm transition-colors"
+          >
+            机器分类
           </button>
         </div>
         <button
@@ -550,6 +567,11 @@ function App() {
       <MilestoneManager
         isOpen={showMilestoneManager}
         onClose={() => setShowMilestoneManager(false)}
+      />
+
+      <CategoryManager
+        isOpen={showCategoryManager}
+        onClose={() => setShowCategoryManager(false)}
       />
     </div>
   );

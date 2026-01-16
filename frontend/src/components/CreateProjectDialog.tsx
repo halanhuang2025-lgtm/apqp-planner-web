@@ -12,18 +12,27 @@ interface CreateProjectDialogProps {
 }
 
 export function CreateProjectDialog({ isOpen, onClose }: CreateProjectDialogProps) {
-  const { templates, createProject, fetchTemplates, isLoading } = useProjectStore();
+  const { templates, categories, createProject, fetchTemplates, fetchCategories, isLoading } = useProjectStore();
 
   const [name, setName] = useState('');
   const [description, setDescription] = useState('');
   const [selectedTemplate, setSelectedTemplate] = useState<string>('builtin_apqp');
 
-  // 加载模板列表
+  // 新字段
+  const [machineNo, setMachineNo] = useState('');
+  const [customer, setCustomer] = useState('');
+  const [model, setModel] = useState('');
+  const [category, setCategory] = useState('');
+  const [specifications, setSpecifications] = useState('');
+  const [customRequirements, setCustomRequirements] = useState('');
+
+  // 加载模板列表和机器分类
   useEffect(() => {
     if (isOpen) {
       fetchTemplates();
+      fetchCategories();
     }
-  }, [isOpen, fetchTemplates]);
+  }, [isOpen, fetchTemplates, fetchCategories]);
 
   // 重置表单
   useEffect(() => {
@@ -31,6 +40,12 @@ export function CreateProjectDialog({ isOpen, onClose }: CreateProjectDialogProp
       setName('');
       setDescription('');
       setSelectedTemplate('builtin_apqp');
+      setMachineNo('');
+      setCustomer('');
+      setModel('');
+      setCategory('');
+      setSpecifications('');
+      setCustomRequirements('');
     }
   }, [isOpen]);
 
@@ -41,11 +56,17 @@ export function CreateProjectDialog({ isOpen, onClose }: CreateProjectDialogProp
     e.preventDefault();
     if (!name.trim()) return;
 
-    const result = await createProject(
-      name.trim(),
-      description.trim(),
-      selectedTemplate || undefined
-    );
+    const result = await createProject({
+      name: name.trim(),
+      description: description.trim(),
+      template_id: selectedTemplate || undefined,
+      machine_no: machineNo.trim(),
+      customer: customer.trim(),
+      model: model.trim(),
+      category: category,
+      specifications: specifications.trim(),
+      custom_requirements: customRequirements.trim(),
+    });
 
     if (result) {
       onClose();
@@ -73,7 +94,7 @@ export function CreateProjectDialog({ isOpen, onClose }: CreateProjectDialogProp
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-lg shadow-xl w-[500px]">
+      <div className="bg-white rounded-lg shadow-xl w-[600px] max-h-[90vh] flex flex-col">
         {/* 标题栏 */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <h2 className="text-lg font-bold text-gray-900">新建项目</h2>
@@ -87,8 +108,8 @@ export function CreateProjectDialog({ isOpen, onClose }: CreateProjectDialogProp
           </button>
         </div>
 
-        {/* 表单 */}
-        <form onSubmit={handleSubmit} className="p-6">
+        {/* 表单 - 可滚动区域 */}
+        <form onSubmit={handleSubmit} className="flex-1 overflow-y-auto p-6">
           {/* 项目名称 */}
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -99,23 +120,113 @@ export function CreateProjectDialog({ isOpen, onClose }: CreateProjectDialogProp
               className="input"
               value={name}
               onChange={(e) => setName(e.target.value)}
-              placeholder="输入项目名称"
+              placeholder="如：W12661-AMAM-HVR320A"
               autoFocus
               required
+            />
+          </div>
+
+          {/* 项目详细属性 - 两列布局 */}
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            {/* 整机编号 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                整机编号
+              </label>
+              <input
+                type="text"
+                className="input"
+                value={machineNo}
+                onChange={(e) => setMachineNo(e.target.value)}
+                placeholder="如：W12661-297-T2"
+              />
+            </div>
+
+            {/* 客户名称 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                客户名称
+              </label>
+              <input
+                type="text"
+                className="input"
+                value={customer}
+                onChange={(e) => setCustomer(e.target.value)}
+                placeholder="如：AMAM"
+              />
+            </div>
+
+            {/* 机型 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                机型
+              </label>
+              <input
+                type="text"
+                className="input"
+                value={model}
+                onChange={(e) => setModel(e.target.value)}
+                placeholder="如：HVR-320A(Q)-4"
+              />
+            </div>
+
+            {/* 机器分类 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                机器分类
+              </label>
+              <select
+                className="input"
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+              >
+                <option value="">选择分类</option>
+                {categories.map((cat) => (
+                  <option key={cat} value={cat}>{cat}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
+          {/* 规格 */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              规格
+            </label>
+            <input
+              type="text"
+              className="input"
+              value={specifications}
+              onChange={(e) => setSpecifications(e.target.value)}
+              placeholder="如：外钢304 380V 50Hz 三相"
+            />
+          </div>
+
+          {/* 定制内容 */}
+          <div className="mb-4">
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              定制内容
+            </label>
+            <textarea
+              className="input"
+              rows={2}
+              value={customRequirements}
+              onChange={(e) => setCustomRequirements(e.target.value)}
+              placeholder="如：带水冷机；包装高度10mm每级可调"
             />
           </div>
 
           {/* 项目描述 */}
           <div className="mb-4">
             <label className="block text-sm font-medium text-gray-700 mb-1">
-              项目描述
+              备注
             </label>
             <textarea
               className="input"
               rows={2}
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="输入项目描述（可选）"
+              placeholder="其他补充说明（可选）"
             />
           </div>
 
@@ -124,7 +235,7 @@ export function CreateProjectDialog({ isOpen, onClose }: CreateProjectDialogProp
             <label className="block text-sm font-medium text-gray-700 mb-2">
               选择模板
             </label>
-            <div className="space-y-2 max-h-48 overflow-y-auto">
+            <div className="space-y-2 max-h-36 overflow-y-auto">
               {allTemplates.map((template) => (
                 <label
                   key={template.id}
@@ -160,7 +271,7 @@ export function CreateProjectDialog({ isOpen, onClose }: CreateProjectDialogProp
           </div>
 
           {/* 按钮 */}
-          <div className="flex justify-end gap-3">
+          <div className="flex justify-end gap-3 pt-4 border-t border-gray-200">
             <button
               type="button"
               onClick={onClose}

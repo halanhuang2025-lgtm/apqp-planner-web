@@ -17,6 +17,9 @@ export function ProjectListModal({ isOpen, onClose, onCreateProject, onCompare }
   const {
     projects,
     currentProject,
+    categories,
+    categoryFilter,
+    setCategoryFilter,
     switchProject,
     deleteProject,
     duplicateProject,
@@ -33,13 +36,21 @@ export function ProjectListModal({ isOpen, onClose, onCreateProject, onCompare }
   const [editingProject, setEditingProject] = useState<string | null>(null);
   const [inputName, setInputName] = useState('');
   const [inputDescription, setInputDescription] = useState('');
+  // 编辑项目的扩展字段
+  const [inputMachineNo, setInputMachineNo] = useState('');
+  const [inputCustomer, setInputCustomer] = useState('');
+  const [inputModel, setInputModel] = useState('');
+  const [inputCategory, setInputCategory] = useState('');
+  const [inputSpecifications, setInputSpecifications] = useState('');
+  const [inputCustomRequirements, setInputCustomRequirements] = useState('');
 
   if (!isOpen) return null;
 
   // 过滤项目
   const filteredProjects = projects
     .filter(p => p.status === activeTab)
-    .filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()));
+    .filter(p => p.name.toLowerCase().includes(searchQuery.toLowerCase()))
+    .filter(p => !categoryFilter || p.category === categoryFilter);
 
   // 切换项目
   const handleSwitch = async (project: Project) => {
@@ -75,6 +86,12 @@ export function ProjectListModal({ isOpen, onClose, onCreateProject, onCompare }
     setEditingProject(project.id);
     setInputName(project.name);
     setInputDescription(project.description || '');
+    setInputMachineNo(project.machine_no || '');
+    setInputCustomer(project.customer || '');
+    setInputModel(project.model || '');
+    setInputCategory(project.category || '');
+    setInputSpecifications(project.specifications || '');
+    setInputCustomRequirements(project.custom_requirements || '');
   };
 
   // 保存项目编辑
@@ -83,10 +100,14 @@ export function ProjectListModal({ isOpen, onClose, onCreateProject, onCompare }
     await updateProject(projectId, {
       name: inputName.trim(),
       description: inputDescription.trim(),
+      machine_no: inputMachineNo.trim(),
+      customer: inputCustomer.trim(),
+      model: inputModel.trim(),
+      category: inputCategory,
+      specifications: inputSpecifications.trim(),
+      custom_requirements: inputCustomRequirements.trim(),
     });
-    setEditingProject(null);
-    setInputName('');
-    setInputDescription('');
+    cancelEdit();
   };
 
   // 取消编辑
@@ -94,6 +115,12 @@ export function ProjectListModal({ isOpen, onClose, onCreateProject, onCompare }
     setEditingProject(null);
     setInputName('');
     setInputDescription('');
+    setInputMachineNo('');
+    setInputCustomer('');
+    setInputModel('');
+    setInputCategory('');
+    setInputSpecifications('');
+    setInputCustomRequirements('');
   };
 
   // 切换对比选择
@@ -174,15 +201,25 @@ export function ProjectListModal({ isOpen, onClose, onCreateProject, onCompare }
             ))}
           </div>
 
-          {/* 搜索框 */}
-          <div className="flex-1 max-w-xs">
+          {/* 搜索和分类筛选 */}
+          <div className="flex items-center gap-2 flex-1">
             <input
               type="text"
               placeholder="搜索项目..."
-              className="w-full px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
+              className="flex-1 max-w-[200px] px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50"
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
             />
+            <select
+              className="px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-primary/50 bg-white"
+              value={categoryFilter}
+              onChange={(e) => setCategoryFilter(e.target.value)}
+            >
+              <option value="">全部分类</option>
+              {categories.map((cat) => (
+                <option key={cat} value={cat}>{cat}</option>
+              ))}
+            </select>
           </div>
 
           {/* 新建按钮 */}
@@ -240,8 +277,9 @@ export function ProjectListModal({ isOpen, onClose, onCreateProject, onCompare }
                   {editingProject === project.id ? (
                     /* 编辑模式 */
                     <div className="space-y-3">
+                      {/* 第一行：项目名称 */}
                       <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">项目名称</label>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">项目名称 *</label>
                         <input
                           type="text"
                           className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary/50"
@@ -250,17 +288,87 @@ export function ProjectListModal({ isOpen, onClose, onCreateProject, onCompare }
                           autoFocus
                         />
                       </div>
+                      {/* 第二行：整机编号、客户、机型、分类 */}
+                      <div className="grid grid-cols-4 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">整机编号</label>
+                          <input
+                            type="text"
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary/50"
+                            value={inputMachineNo}
+                            onChange={(e) => setInputMachineNo(e.target.value)}
+                            placeholder="如：W12661-297-T2"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">客户名称</label>
+                          <input
+                            type="text"
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary/50"
+                            value={inputCustomer}
+                            onChange={(e) => setInputCustomer(e.target.value)}
+                            placeholder="如：AMAM"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">机型</label>
+                          <input
+                            type="text"
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary/50"
+                            value={inputModel}
+                            onChange={(e) => setInputModel(e.target.value)}
+                            placeholder="如：HVR-320A"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">机器分类</label>
+                          <select
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary/50 bg-white"
+                            value={inputCategory}
+                            onChange={(e) => setInputCategory(e.target.value)}
+                          >
+                            <option value="">选择分类</option>
+                            {categories.map((cat) => (
+                              <option key={cat} value={cat}>{cat}</option>
+                            ))}
+                          </select>
+                        </div>
+                      </div>
+                      {/* 第三行：规格 */}
                       <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">项目描述</label>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">规格</label>
+                        <input
+                          type="text"
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary/50"
+                          value={inputSpecifications}
+                          onChange={(e) => setInputSpecifications(e.target.value)}
+                          placeholder="如：外钢304 380V 50Hz 三相"
+                        />
+                      </div>
+                      {/* 第四行：定制内容 */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">定制内容</label>
+                        <input
+                          type="text"
+                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary/50"
+                          value={inputCustomRequirements}
+                          onChange={(e) => setInputCustomRequirements(e.target.value)}
+                          placeholder="如：带水冷机；包装高度10mm每级可调"
+                        />
+                      </div>
+                      {/* 第五行：备注 */}
+                      <div>
+                        <label className="block text-xs font-medium text-gray-500 mb-1">备注</label>
                         <input
                           type="text"
                           className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary/50"
                           value={inputDescription}
                           onChange={(e) => setInputDescription(e.target.value)}
-                          placeholder="可选"
+                          placeholder="其他补充说明"
                         />
                       </div>
-                      <div className="flex justify-end gap-2">
+                      {/* 操作按钮 */}
+                      <div className="flex justify-end gap-2 pt-2 border-t border-gray-100">
                         <button
                           onClick={cancelEdit}
                           className="px-3 py-1.5 text-sm text-gray-600 hover:bg-gray-100 rounded"

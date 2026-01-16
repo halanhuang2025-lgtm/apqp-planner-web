@@ -68,6 +68,17 @@ class AppState:
         "量产准备",
     ]
 
+    # 默认机器分类列表
+    DEFAULT_CATEGORIES = [
+        "拉伸膜机",
+        "真空机",
+        "热封机",
+        "贴体机",
+        "气调机",
+        "封口机",
+        "其他",
+    ]
+
     def __init__(self):
         self.project_manager = ProjectManager()
         self.config_manager = ConfigManager()
@@ -77,6 +88,32 @@ class AppState:
         self.tasks: List[Task] = []
         self.progress_manager = ProgressManager()
         self.milestones: List[str] = self.DEFAULT_MILESTONES.copy()
+
+        # 机器分类（全局配置）
+        self.categories: List[str] = self._load_categories()
+
+    def _get_categories_file(self) -> Path:
+        """获取机器分类配置文件路径"""
+        return self.project_manager.config_dir / "categories.json"
+
+    def _load_categories(self) -> List[str]:
+        """加载机器分类配置"""
+        categories_file = self._get_categories_file()
+        if categories_file.exists():
+            try:
+                with open(categories_file, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    return data.get("categories", self.DEFAULT_CATEGORIES.copy())
+            except (json.JSONDecodeError, KeyError):
+                pass
+        return self.DEFAULT_CATEGORIES.copy()
+
+    def _save_categories(self):
+        """保存机器分类配置"""
+        categories_file = self._get_categories_file()
+        data = {"version": "1.0", "categories": self.categories}
+        with open(categories_file, 'w', encoding='utf-8') as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
 
     def ensure_project_loaded(self):
         """确保有项目已加载"""
@@ -390,6 +427,13 @@ class ProjectModel(BaseModel):
     name: str
     description: str = ""
     template_id: Optional[str] = None
+    # 项目详细属性
+    machine_no: str = ""        # 整机编号
+    customer: str = ""          # 客户名称
+    model: str = ""             # 机型
+    category: str = ""          # 机器分类
+    specifications: str = ""    # 规格
+    custom_requirements: str = ""  # 定制内容
 
 
 class ProjectUpdateModel(BaseModel):
@@ -397,6 +441,14 @@ class ProjectUpdateModel(BaseModel):
     name: Optional[str] = None
     description: Optional[str] = None
     status: Optional[str] = None
+    # 项目详细属性
+    machine_no: Optional[str] = None
+    customer: Optional[str] = None
+    model: Optional[str] = None
+    category: Optional[str] = None
+    specifications: Optional[str] = None
+    custom_requirements: Optional[str] = None
+    # 排期设置
     schedule_mode: Optional[str] = None
     schedule_date: Optional[str] = None
     exclude_weekends: Optional[bool] = None
@@ -431,10 +483,21 @@ async def list_projects(status: Optional[str] = None):
 @app.post("/api/projects")
 async def create_project(project: ProjectModel):
     """创建新项目"""
+    # 收集额外字段
+    extra_fields = {
+        "machine_no": project.machine_no,
+        "customer": project.customer,
+        "model": project.model,
+        "category": project.category,
+        "specifications": project.specifications,
+        "custom_requirements": project.custom_requirements,
+    }
+
     new_project = app_state.project_manager.create_project(
         name=project.name,
         description=project.description,
-        template_id=project.template_id
+        template_id=project.template_id,
+        extra_fields=extra_fields
     )
     return {"project": new_project.to_dict(), "message": "项目创建成功"}
 
@@ -659,6 +722,88 @@ async def update_milestone(name: str, request: MilestoneRequest):
     app_state.auto_save()
 
     return {"milestones": app_state.milestones, "message": "里程碑更新成功"}
+
+
+# ============ 机器分类管理 API ============
+
+class CategoryRequest(BaseModel):
+    """机器分类请求"""
+    name: str
+
+
+@app.get("/api/categories")
+async def get_categories():
+    """获取机器分类列表"""
+    return {"categories": app_state.categories}
+
+
+@app.post("/api/categories")
+async def add_category(request: CategoryRequest):
+    """添加机器分类"""
+    name = request.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="分类名称不能为空")
+
+    if name in app_state.categories:
+        raise HTTPException(status_code=400, detail="分类已存在")
+
+    app_state.categories.append(name)
+    app_state._save_categories()
+
+    return {"categories": app_state.categories, "message": "分类添加成功"}
+
+
+@app.delete("/api/categories/{name}")
+async def delete_category(name: str):
+    """删除机器分类"""
+    import urllib.parse
+    name = urllib.parse.unquote(name)
+
+    if name not in app_state.categories:
+        raise HTTPException(status_code=404, detail="分类不存在")
+
+    # 检查是否有项目在使用该分类
+    for project in app_state.project_manager.list_projects():
+        if project.category == name:
+            raise HTTPException(
+                status_code=400,
+                detail=f"无法删除：项目 '{project.name}' 正在使用此分类"
+            )
+
+    app_state.categories.remove(name)
+    app_state._save_categories()
+
+    return {"categories": app_state.categories, "message": "分类删除成功"}
+
+
+@app.put("/api/categories/{name}")
+async def update_category(name: str, request: CategoryRequest):
+    """重命名机器分类"""
+    import urllib.parse
+    name = urllib.parse.unquote(name)
+
+    if name not in app_state.categories:
+        raise HTTPException(status_code=404, detail="分类不存在")
+
+    new_name = request.name.strip()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="分类名称不能为空")
+
+    if new_name != name and new_name in app_state.categories:
+        raise HTTPException(status_code=400, detail="新名称已存在")
+
+    # 更新分类名称
+    index = app_state.categories.index(name)
+    app_state.categories[index] = new_name
+
+    # 同时更新所有使用该分类的项目
+    for project in app_state.project_manager.list_projects():
+        if project.category == name:
+            app_state.project_manager.update_project(project.id, {"category": new_name})
+
+    app_state._save_categories()
+
+    return {"categories": app_state.categories, "message": "分类更新成功"}
 
 
 # ============ Excel 导出 API ============

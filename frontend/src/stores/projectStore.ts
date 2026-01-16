@@ -3,8 +3,9 @@
  */
 
 import { create } from 'zustand';
-import type { Project, ProjectTemplate, ProjectComparisonData } from '../types/project';
+import type { Project, ProjectTemplate, ProjectComparisonData, CreateProjectRequest } from '../types/project';
 import * as projectApi from '../api/projects';
+import * as taskApi from '../api/tasks';
 
 interface ProjectState {
   // 状态
@@ -12,6 +13,7 @@ interface ProjectState {
   currentProject: Project | null;
   templates: ProjectTemplate[];
   comparisonData: ProjectComparisonData[];
+  categories: string[];  // 机器分类列表
   isLoading: boolean;
   error: string | null;
 
@@ -20,16 +22,23 @@ interface ProjectState {
   showCreateDialog: boolean;
   showCompareView: boolean;
 
+  // 筛选状态
+  categoryFilter: string;  // 当前筛选的分类，空串表示全部
+  viewMode: 'grouped' | 'list';  // 视图模式
+
   // Actions
   setShowProjectList: (show: boolean) => void;
   setShowCreateDialog: (show: boolean) => void;
   setShowCompareView: (show: boolean) => void;
+  setCategoryFilter: (category: string) => void;
+  setViewMode: (mode: 'grouped' | 'list') => void;
   clearError: () => void;
 
   // API Actions
   fetchProjects: () => Promise<void>;
   fetchTemplates: () => Promise<void>;
-  createProject: (name: string, description?: string, templateId?: string) => Promise<Project | null>;
+  fetchCategories: () => Promise<void>;
+  createProject: (data: CreateProjectRequest) => Promise<Project | null>;
   updateProject: (projectId: string, updates: Partial<Project>) => Promise<void>;
   deleteProject: (projectId: string) => Promise<boolean>;
   switchProject: (projectId: string) => Promise<boolean>;
@@ -45,16 +54,21 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   currentProject: null,
   templates: [],
   comparisonData: [],
+  categories: [],
   isLoading: false,
   error: null,
   showProjectList: false,
   showCreateDialog: false,
   showCompareView: false,
+  categoryFilter: '',
+  viewMode: 'grouped',
 
   // UI Actions
   setShowProjectList: (show) => set({ showProjectList: show }),
   setShowCreateDialog: (show) => set({ showCreateDialog: show }),
   setShowCompareView: (show) => set({ showCompareView: show }),
+  setCategoryFilter: (category) => set({ categoryFilter: category }),
+  setViewMode: (mode) => set({ viewMode: mode }),
   clearError: () => set({ error: null }),
 
   // API Actions
@@ -99,14 +113,19 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     }
   },
 
-  createProject: async (name, description, templateId) => {
+  fetchCategories: async () => {
+    try {
+      const categories = await taskApi.getCategories();
+      set({ categories });
+    } catch (error) {
+      console.error('获取机器分类失败:', error);
+    }
+  },
+
+  createProject: async (data) => {
     set({ isLoading: true, error: null });
     try {
-      const project = await projectApi.createProject({
-        name,
-        description,
-        template_id: templateId
-      });
+      const project = await projectApi.createProject(data);
 
       // 更新项目列表
       const { projects } = get();

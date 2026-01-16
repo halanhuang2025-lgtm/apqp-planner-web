@@ -24,6 +24,14 @@ class Project:
     updated_at: datetime = field(default_factory=datetime.now)
     status: str = "active"  # active / archived / template
 
+    # 项目详细属性
+    machine_no: str = ""        # 整机编号，如 W12661-297-T2
+    customer: str = ""          # 客户名称
+    model: str = ""             # 机型，如 HVR-320A(Q)-4
+    category: str = ""          # 机器分类，如 拉伸膜机
+    specifications: str = ""    # 规格，如 外钢304 380V 50Hz 三相
+    custom_requirements: str = ""  # 定制内容
+
     # 排期设置
     schedule_mode: str = "forward"  # forward / backward
     schedule_date: Optional[str] = None
@@ -43,10 +51,19 @@ class Project:
             "created_at": self.created_at.isoformat() if isinstance(self.created_at, datetime) else self.created_at,
             "updated_at": self.updated_at.isoformat() if isinstance(self.updated_at, datetime) else self.updated_at,
             "status": self.status,
+            # 项目详细属性
+            "machine_no": self.machine_no,
+            "customer": self.customer,
+            "model": self.model,
+            "category": self.category,
+            "specifications": self.specifications,
+            "custom_requirements": self.custom_requirements,
+            # 排期设置
             "schedule_mode": self.schedule_mode,
             "schedule_date": self.schedule_date,
             "exclude_weekends": self.exclude_weekends,
             "exclude_holidays": self.exclude_holidays,
+            # 统计信息
             "task_count": self.task_count,
             "completion_rate": self.completion_rate,
         }
@@ -73,10 +90,19 @@ class Project:
             created_at=created_at,
             updated_at=updated_at,
             status=data.get("status", "active"),
+            # 项目详细属性
+            machine_no=data.get("machine_no", ""),
+            customer=data.get("customer", ""),
+            model=data.get("model", ""),
+            category=data.get("category", ""),
+            specifications=data.get("specifications", ""),
+            custom_requirements=data.get("custom_requirements", ""),
+            # 排期设置
             schedule_mode=data.get("schedule_mode", "forward"),
             schedule_date=data.get("schedule_date"),
             exclude_weekends=data.get("exclude_weekends", True),
             exclude_holidays=data.get("exclude_holidays", False),
+            # 统计信息
             task_count=data.get("task_count", 0),
             completion_rate=data.get("completion_rate", 0.0),
         )
@@ -129,15 +155,32 @@ class ProjectManager:
         return sorted(projects, key=lambda p: p.updated_at, reverse=True)
 
     def create_project(self, name: str, description: str = "",
-                       template_id: Optional[str] = None) -> Project:
-        """创建新项目"""
+                       template_id: Optional[str] = None,
+                       extra_fields: Optional[Dict] = None) -> Project:
+        """创建新项目
+
+        Args:
+            name: 项目名称
+            description: 项目描述
+            template_id: 模板ID（empty/builtin_apqp/自定义模板ID）
+            extra_fields: 额外字段（machine_no, customer, model, category, specifications, custom_requirements）
+        """
         project_id = f"proj_{uuid.uuid4().hex[:8]}"
 
-        project = Project(
-            id=project_id,
-            name=name,
-            description=description
-        )
+        # 构建项目参数
+        project_kwargs = {
+            "id": project_id,
+            "name": name,
+            "description": description,
+        }
+
+        # 添加额外字段
+        if extra_fields:
+            for key in ["machine_no", "customer", "model", "category", "specifications", "custom_requirements"]:
+                if key in extra_fields:
+                    project_kwargs[key] = extra_fields[key]
+
+        project = Project(**project_kwargs)
 
         # 加载任务模板
         if template_id == "empty":

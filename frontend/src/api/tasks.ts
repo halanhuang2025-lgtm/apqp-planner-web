@@ -123,3 +123,29 @@ export const reorderMilestones = async (milestones: string[]): Promise<string[]>
   const response = await api.put('/api/milestones/reorder', { milestones });
   return response.data.milestones;
 };
+
+// ============ 机器分类管理 API ============
+
+// 获取机器分类列表
+export const getCategories = async (): Promise<string[]> => {
+  const response = await api.get('/api/categories');
+  return response.data.categories;
+};
+
+// 添加机器分类
+export const addCategory = async (name: string): Promise<string[]> => {
+  const response = await api.post('/api/categories', { name });
+  return response.data.categories;
+};
+
+// 删除机器分类
+export const deleteCategory = async (name: string): Promise<string[]> => {
+  const response = await api.delete(`/api/categories/${encodeURIComponent(name)}`);
+  return response.data.categories;
+};
+
+// 重命名机器分类
+export const updateCategory = async (oldName: string, newName: string): Promise<string[]> => {
+  const response = await api.put(`/api/categories/${encodeURIComponent(oldName)}`, { name: newName });
+  return response.data.categories;
+};
