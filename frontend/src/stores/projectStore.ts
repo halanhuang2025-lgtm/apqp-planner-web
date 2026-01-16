@@ -252,8 +252,10 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
       });
 
       return template;
-    } catch (error) {
-      set({ error: '保存模板失败', isLoading: false });
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : '保存模板失败';
+      console.error('保存模板失败:', error);
+      set({ error: message, isLoading: false });
       return null;
     }
   },

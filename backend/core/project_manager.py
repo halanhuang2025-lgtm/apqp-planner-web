@@ -295,7 +295,7 @@ class ProjectManager:
         if not source_project:
             return None
 
-        tasks, _ = self.load_project_data(source_id)
+        tasks, _, milestones = self.load_project_data(source_id)
 
         # 清除进度数据
         for task in tasks:
@@ -318,7 +318,7 @@ class ProjectManager:
         new_project.task_count = len([t for t in tasks if not t.excluded])
 
         # 保存数据
-        self.save_project_data(project_id, tasks, ProgressManager())
+        self.save_project_data(project_id, tasks, ProgressManager(), milestones)
         self.projects[project_id] = new_project
         self._save_index()
 
@@ -330,7 +330,7 @@ class ProjectManager:
         if not source_project:
             return None
 
-        tasks, _ = self.load_project_data(project_id)
+        tasks, _, milestones = self.load_project_data(project_id)
 
         # 清除进度和日期数据
         for task in tasks:
@@ -352,7 +352,7 @@ class ProjectManager:
         )
         template.task_count = len([t for t in tasks if not t.excluded])
 
-        self.save_project_data(template_id, tasks, ProgressManager())
+        self.save_project_data(template_id, tasks, ProgressManager(), milestones)
         self.projects[template_id] = template
         self._save_index()
 

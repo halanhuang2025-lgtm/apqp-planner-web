@@ -73,24 +73,16 @@ export function CreateProjectDialog({ isOpen, onClose }: CreateProjectDialogProp
     }
   };
 
-  // 内置模板列表
-  const builtinTemplates: ProjectTemplate[] = [
-    {
-      id: 'builtin_apqp',
-      name: 'APQP 标准模板',
-      description: '包含完整的 APQP 五阶段 43 个标准任务',
-      task_count: 43,
-    },
-    {
-      id: 'empty',
-      name: '空白项目',
-      description: '不包含任何任务，从零开始',
-      task_count: 0,
-    },
-  ];
+  // 空白项目选项（后端已返回 APQP 标准模板）
+  const emptyTemplate: ProjectTemplate = {
+    id: 'empty',
+    name: '空白项目',
+    description: '不包含任何任务，从零开始',
+    task_count: 0,
+  };
 
-  // 合并模板列表
-  const allTemplates = [...builtinTemplates, ...templates];
+  // 合并模板列表：后端返回的模板 + 空白项目
+  const allTemplates = [...templates, emptyTemplate];
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
@@ -258,7 +250,12 @@ export function CreateProjectDialog({ isOpen, onClose }: CreateProjectDialogProp
                       <span className="font-medium text-gray-900">{template.name}</span>
                       {template.id.startsWith('tmpl_') && (
                         <span className="text-xs px-1.5 py-0.5 bg-blue-100 text-blue-700 rounded">
-                          自定义
+                          自定义模板
+                        </span>
+                      )}
+                      {template.id === 'builtin_apqp' && (
+                        <span className="text-xs px-1.5 py-0.5 bg-green-100 text-green-700 rounded">
+                          推荐
                         </span>
                       )}
                     </div>

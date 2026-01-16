@@ -407,6 +407,48 @@ async def toggle_exclude(index: int):
     return {"excluded": app_state.tasks[index].excluded}
 
 
+class BatchRaciRequest(BaseModel):
+    """批量设置RACI请求"""
+    task_indices: List[int]  # 要更新的任务索引列表，空列表表示全部任务
+    responsible: Optional[List[str]] = None
+    accountable: Optional[str] = None
+    consulted: Optional[List[str]] = None
+    informed: Optional[List[str]] = None
+
+
+@app.post("/api/tasks/batch-raci")
+async def batch_update_raci(request: BatchRaciRequest):
+    """批量设置RACI"""
+    # 确定要更新的任务
+    if request.task_indices:
+        indices = [i for i in request.task_indices if 0 <= i < len(app_state.tasks)]
+    else:
+        # 空列表表示全部任务
+        indices = list(range(len(app_state.tasks)))
+
+    updated_count = 0
+    for index in indices:
+        task = app_state.tasks[index]
+        if request.responsible is not None:
+            task.responsible = request.responsible
+        if request.accountable is not None:
+            task.accountable = request.accountable
+        if request.consulted is not None:
+            task.consulted = request.consulted
+        if request.informed is not None:
+            task.informed = request.informed
+        updated_count += 1
+
+    # 自动保存
+    app_state.auto_save()
+
+    return {
+        "success": True,
+        "updated_count": updated_count,
+        "tasks": [task_to_model(task, i) for i, task in enumerate(app_state.tasks)]
+    }
+
+
 # ============ 排期计算 API ============
 
 @app.post("/api/schedule/forward")
@@ -436,6 +478,9 @@ async def calculate_forward(request: ScheduleRequest):
                 "end_date": last_task.end_date.strftime("%Y-%m-%d"),
                 "total_days": (last_task.end_date - first_task.start_date).days + 1
             }
+
+    # 自动保存排期结果
+    app_state.auto_save()
 
     return {
         "tasks": [task_to_model(task, i) for i, task in enumerate(app_state.tasks)],
@@ -471,6 +516,9 @@ async def calculate_backward(request: ScheduleRequest):
                 "total_days": (last_task.end_date - first_task.start_date).days + 1
             }
 
+    # 自动保存排期结果
+    app_state.auto_save()
+
     return {
         "tasks": [task_to_model(task, i) for i, task in enumerate(app_state.tasks)],
         "summary": summary
@@ -483,10 +531,26 @@ async def calculate_backward(request: ScheduleRequest):
 async def load_template():
     """加载 APQP 标准模板（确保当前有项目）"""
     app_state.ensure_project_loaded()
+
+    # 计算摘要信息（基于已保存的任务日期）
+    summary = None
+    active_tasks = [t for t in app_state.tasks if not t.excluded and t.start_date and t.end_date]
+    if active_tasks:
+        start_dates = [t.start_date for t in active_tasks]
+        end_dates = [t.end_date for t in active_tasks]
+        min_start = min(start_dates)
+        max_end = max(end_dates)
+        summary = {
+            "start_date": min_start.strftime("%Y-%m-%d"),
+            "end_date": max_end.strftime("%Y-%m-%d"),
+            "total_days": (max_end - min_start).days + 1
+        }
+
     return {
         "message": f"已加载 {len(app_state.tasks)} 个任务",
         "tasks": [task_to_model(task, i) for i, task in enumerate(app_state.tasks)],
-        "project": app_state.current_project.to_dict() if app_state.current_project else None
+        "project": app_state.current_project.to_dict() if app_state.current_project else None,
+        "summary": summary
     }
 
 
@@ -1058,8 +1122,9 @@ async def export_excel(request: ExportRequest):
             pass  # 使用默认值（start_date）
 
     # 生成临时文件
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    filename = f"{request.project_name}_开发计划_{timestamp}.xlsx"
+    # 清理项目名称中的特殊字符（避免路径分隔符导致的问题）
+    safe_project_name = request.project_name.replace("/", "_").replace("\\", "_").replace(":", "_")
+    filename = f"{safe_project_name}计划表.xlsx"
 
     # 使用临时目录
     temp_dir = tempfile.gettempdir()
@@ -1255,18 +1320,38 @@ def open_browser():
 
 
 if __name__ == "__main__":
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dev", action="store_true", help="开发模式（热重载）")
+    parser.add_argument("--no-browser", action="store_true", help="不自动打开浏览器")
+    args = parser.parse_args()
+
     print("=" * 50)
     print("  APQP 项目计划生成器 - Web 版")
     print(f"  访问地址: http://localhost:{PORT}")
+    if args.dev:
+        print("  模式: 开发模式（代码修改自动重载）")
     print("=" * 50)
 
     # 1秒后自动打开浏览器
-    threading.Timer(1.0, open_browser).start()
+    if not args.no_browser:
+        threading.Timer(1.0, open_browser).start()
 
     # 启动服务器
-    uvicorn.run(
-        app,
-        host="127.0.0.1",
-        port=PORT,
-        log_level="info"
-    )
+    if args.dev:
+        # 开发模式：启用热重载，修改代码自动生效
+        uvicorn.run(
+            "main:app",
+            host="127.0.0.1",
+            port=PORT,
+            reload=True,
+            log_level="info"
+        )
+    else:
+        # 生产模式
+        uvicorn.run(
+            app,
+            host="127.0.0.1",
+            port=PORT,
+            log_level="info"
+        )

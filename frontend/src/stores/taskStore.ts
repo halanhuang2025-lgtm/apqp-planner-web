@@ -109,8 +109,36 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   loadTemplate: async () => {
     set({ isLoading: true, error: null });
     try {
-      const { tasks } = await taskApi.loadTemplate();
-      set({ tasks, isLoading: false, selectedIndices: [] });
+      const { tasks, project, summary } = await taskApi.loadTemplate();
+
+      // 恢复排期设置
+      const updates: Partial<TaskState> = {
+        tasks,
+        isLoading: false,
+        selectedIndices: [],
+      };
+
+      // 恢复摘要信息（总天数等）
+      if (summary) {
+        updates.scheduleSummary = summary;
+      }
+
+      if (project) {
+        if (project.schedule_mode) {
+          updates.scheduleMode = project.schedule_mode;
+        }
+        if (project.schedule_date) {
+          updates.scheduleDate = project.schedule_date;
+        }
+        if (project.exclude_weekends !== undefined) {
+          updates.excludeWeekends = project.exclude_weekends;
+        }
+        if (project.exclude_holidays !== undefined) {
+          updates.excludeHolidays = project.exclude_holidays;
+        }
+      }
+
+      set(updates);
     } catch (error) {
       set({ error: '加载模板失败', isLoading: false });
     }
@@ -204,6 +232,17 @@ export const useTaskStore = create<TaskState>((set, get) => ({
         scheduleSummary: response.summary,
         isLoading: false,
       });
+
+      // 保存排期设置到项目
+      const projectStore = useProjectStore.getState();
+      if (projectStore.currentProject) {
+        projectStore.updateProject(projectStore.currentProject.id, {
+          schedule_mode: scheduleMode,
+          schedule_date: scheduleDate,
+          exclude_weekends: excludeWeekends,
+          exclude_holidays: excludeHolidays,
+        });
+      }
     } catch (error) {
       set({ error: '计算排期失败', isLoading: false });
     }

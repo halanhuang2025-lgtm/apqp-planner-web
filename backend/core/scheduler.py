@@ -107,13 +107,14 @@ class Task:
             "owner": self.owner,
             "predecessor": self.predecessor
         }
-        # 保存手动设定的日期
-        if self.manual_start and self.start_date:
+        # 保存日期（包括计算的日期和手动设定的日期）
+        if self.start_date:
             result["start_date"] = self.start_date.strftime("%Y-%m-%d")
-            result["manual_start"] = True
-        if self.manual_end and self.end_date:
+        if self.end_date:
             result["end_date"] = self.end_date.strftime("%Y-%m-%d")
-            result["manual_end"] = True
+        # 保存手动设定标记
+        result["manual_start"] = self.manual_start
+        result["manual_end"] = self.manual_end
         # 保存实际日期
         if self.actual_start:
             result["actual_start"] = self.actual_start.strftime("%Y-%m-%d")
@@ -145,13 +146,14 @@ class Task:
             owner=data.get("owner", ""),
             predecessor=data.get("predecessor", "")
         )
-        # 加载手动设定的日期
-        if data.get("manual_start") and data.get("start_date"):
+        # 加载日期（包括计算的日期和手动设定的日期）
+        if data.get("start_date"):
             task.start_date = datetime.strptime(data["start_date"], "%Y-%m-%d")
-            task.manual_start = True
-        if data.get("manual_end") and data.get("end_date"):
+        if data.get("end_date"):
             task.end_date = datetime.strptime(data["end_date"], "%Y-%m-%d")
-            task.manual_end = True
+        # 加载手动设定标记
+        task.manual_start = data.get("manual_start", False)
+        task.manual_end = data.get("manual_end", False)
         # 加载实际日期
         if data.get("actual_start"):
             task.actual_start = datetime.strptime(data["actual_start"], "%Y-%m-%d")

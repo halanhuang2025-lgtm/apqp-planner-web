@@ -43,6 +43,20 @@ export const toggleExclude = async (index: number): Promise<{ excluded: boolean 
   return response.data;
 };
 
+// 批量设置RACI
+export interface BatchRaciRequest {
+  task_indices: number[];  // 空数组表示全部任务
+  responsible?: string[];
+  accountable?: string;
+  consulted?: string[];
+  informed?: string[];
+}
+
+export const batchUpdateRaci = async (request: BatchRaciRequest): Promise<{ success: boolean; updated_count: number; tasks: Task[] }> => {
+  const response = await api.post('/api/tasks/batch-raci', request);
+  return response.data;
+};
+
 // 正向排期
 export const calculateForward = async (request: ScheduleRequest): Promise<ScheduleResponse> => {
   const response = await api.post('/api/schedule/forward', request);
@@ -56,7 +70,21 @@ export const calculateBackward = async (request: ScheduleRequest): Promise<Sched
 };
 
 // 加载模板
-export const loadTemplate = async (): Promise<{ tasks: Task[]; message: string }> => {
+export const loadTemplate = async (): Promise<{
+  tasks: Task[];
+  message: string;
+  project?: {
+    schedule_mode?: 'forward' | 'backward';
+    schedule_date?: string;
+    exclude_weekends?: boolean;
+    exclude_holidays?: boolean;
+  };
+  summary?: {
+    start_date: string;
+    end_date: string;
+    total_days: number;
+  };
+}> => {
   const response = await api.get('/api/config/template');
   return response.data;
 };

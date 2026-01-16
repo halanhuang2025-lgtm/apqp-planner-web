@@ -98,12 +98,23 @@ class ExcelGenerator:
                              exclude_holidays=exclude_holidays)
         tasks = scheduler.calculate_dates(tasks, start_date)
 
+        # 自动计算甘特图天数：根据任务结束日期
+        if gantt_days <= 0 or gantt_days is None:
+            # 找到最晚的结束日期
+            end_dates = [t.end_date for t in tasks if t.end_date]
+            if end_dates:
+                max_end_date = max(end_dates)
+                # 甘特图天数 = 最晚结束日期 - 甘特图开始日期 + 额外buffer天数
+                gantt_days = (max_end_date - effective_gantt_start).days + 14  # 加14天buffer
+            else:
+                gantt_days = 90  # 默认90天
+
         wb = Workbook()
         ws = wb.active
         ws.title = "项目计划"
 
-        # 创建标题区域
-        self._create_header(ws, project_name)
+        # 创建标题区域（传入任务列表用于计算总天数）
+        self._create_header(ws, project_name, tasks)
 
         # 创建表头（使用甘特图开始日期）
         self._create_table_header(ws, effective_gantt_start, gantt_days)
@@ -117,8 +128,8 @@ class ExcelGenerator:
         # 添加图例
         self._add_legend(ws, last_data_row)
 
-        # 冻结窗格（N列开始是甘特图）
-        ws.freeze_panes = 'N6'
+        # 冻结窗格（Q列开始是甘特图）
+        ws.freeze_panes = 'Q6'
 
         # 如果有进度记录，创建进度历史工作表
         if progress_manager and progress_manager.records:
@@ -129,27 +140,45 @@ class ExcelGenerator:
 
         return output_path
 
-    def _create_header(self, ws, project_name: str):
+    def _create_header(self, ws, project_name: str, tasks: List[Task]):
         """创建标题区域"""
-        ws.merge_cells('A1:L1')
-        ws['A1'] = f"{project_name} - 新产品开发计划"
+        ws.merge_cells('A1:N1')
+        ws['A1'] = f"{project_name}计划表"
         ws['A1'].font = self.header_font
         ws['A1'].alignment = self.center_align
 
-        ws['M1'] = f"创建日期: {datetime.now().strftime('%Y-%m-%d')}"
-        ws['M1'].font = self.normal_font
+        # 计算项目总天数
+        total_days = 0
+        if tasks:
+            # 找到最早开始日期和最晚结束日期
+            start_dates = [t.start_date for t in tasks if t.start_date]
+            end_dates = [t.end_date for t in tasks if t.end_date]
+            if start_dates and end_dates:
+                project_start = min(start_dates)
+                project_end = max(end_dates)
+                total_days = (project_end - project_start).days + 1
+
+        # 显示项目总天数
+        ws['O1'] = f"项目总天数: {total_days}天"
+        ws['O1'].font = Font(name="微软雅黑", size=11, bold=True)
+        ws['O1'].alignment = Alignment(horizontal='center', vertical='center')
+
+        ws['Q1'] = f"创建日期: {datetime.now().strftime('%Y-%m-%d')}"
+        ws['Q1'].font = self.normal_font
 
         ws.row_dimensions[1].height = 30
         ws.row_dimensions[2].height = 10  # 空行
 
     def _create_table_header(self, ws, start_date: datetime, gantt_days: int):
         """创建表头"""
-        # 新列布局: A-M 为数据列，N 起为甘特图
-        headers = ["里程碑", "编号", "任务名称", "主责人", "前置任务",
-                   "计划开始", "计划结束", "计划工期",
+        # 新列布局: A-P 为数据列，Q 起为甘特图
+        # RACI 列：R-执行者、A-批准人、C-咨询人、I-知会人
+        headers = ["里程碑", "编号", "任务名称",
+                   "R-执行者", "A-批准人", "C-咨询人", "I-知会人",
+                   "前置任务", "计划开始", "计划结束", "计划工期",
                    "实际开始", "实际结束", "进度偏差",
                    "状态", "类型"]
-        header_widths = [12, 6, 32, 10, 8, 11, 11, 8, 11, 11, 8, 8, 6]
+        header_widths = [12, 6, 32, 12, 10, 12, 12, 8, 11, 11, 8, 11, 11, 8, 8, 6]
 
         # 第 3-5 行为表头（3-4行合并为主表头，5行为日期星期）
         for col, (header, width) in enumerate(zip(headers, header_widths), start=1):
@@ -162,8 +191,8 @@ class ExcelGenerator:
             cell.border = self.thin_border
             ws.column_dimensions[get_column_letter(col)].width = width
 
-        # 甘特图日期列（从 N 列 = 14 列开始）
-        gantt_start_col = 14
+        # 甘特图日期列（从 Q 列 = 17 列开始）
+        gantt_start_col = 17
         today = datetime.now().date()
 
         for i in range(gantt_days):
@@ -224,7 +253,7 @@ class ExcelGenerator:
         Returns:
             最后一个数据行的行号
         """
-        gantt_start_col = 14  # N列
+        gantt_start_col = 17  # Q列
         current_row = 6
         current_milestone = None
         milestone_start_row = 6
@@ -262,95 +291,117 @@ class ExcelGenerator:
             cell_c.alignment = self.left_align
             cell_c.border = self.thin_border
 
-            # D列: 主责人
-            cell_d = ws.cell(row=plan_row, column=4, value=task.owner)
+            # D列: R-执行者 (RACI - Responsible)
+            responsible_str = ", ".join(task.responsible) if hasattr(task, 'responsible') and task.responsible else ""
+            cell_d = ws.cell(row=plan_row, column=4, value=responsible_str)
             cell_d.font = self.normal_font
             cell_d.alignment = self.center_align
             cell_d.border = self.thin_border
 
-            # E列: 前置任务
-            cell_e = ws.cell(row=plan_row, column=5, value=task.predecessor or "-")
+            # E列: A-批准人 (RACI - Accountable)
+            accountable_str = task.accountable if hasattr(task, 'accountable') and task.accountable else ""
+            cell_e = ws.cell(row=plan_row, column=5, value=accountable_str)
             cell_e.font = self.normal_font
             cell_e.alignment = self.center_align
             cell_e.border = self.thin_border
 
-            # F列: 计划开始日期
-            cell_f = ws.cell(row=plan_row, column=6)
-            if task.start_date:
-                cell_f.value = task.start_date
-                cell_f.number_format = 'YYYY-MM-DD'
+            # F列: C-咨询人 (RACI - Consulted)
+            consulted_str = ", ".join(task.consulted) if hasattr(task, 'consulted') and task.consulted else ""
+            cell_f = ws.cell(row=plan_row, column=6, value=consulted_str)
             cell_f.font = self.normal_font
             cell_f.alignment = self.center_align
             cell_f.border = self.thin_border
 
-            # G列: 计划结束日期
-            cell_g = ws.cell(row=plan_row, column=7)
-            if task.end_date:
-                cell_g.value = task.end_date
-                cell_g.number_format = 'YYYY-MM-DD'
+            # G列: I-知会人 (RACI - Informed)
+            informed_str = ", ".join(task.informed) if hasattr(task, 'informed') and task.informed else ""
+            cell_g = ws.cell(row=plan_row, column=7, value=informed_str)
             cell_g.font = self.normal_font
             cell_g.alignment = self.center_align
             cell_g.border = self.thin_border
 
-            # H列: 计划工期（公式）
-            cell_h = ws.cell(row=plan_row, column=8)
-            cell_h.value = f'=IF(AND(F{plan_row}<>"",G{plan_row}<>""),G{plan_row}-F{plan_row}+1,"")'
+            # H列: 前置任务
+            cell_h = ws.cell(row=plan_row, column=8, value=task.predecessor or "-")
             cell_h.font = self.normal_font
             cell_h.alignment = self.center_align
             cell_h.border = self.thin_border
 
-            # I列: 实际开始日期
+            # I列: 计划开始日期
             cell_i = ws.cell(row=plan_row, column=9)
-            if task.actual_start:
-                cell_i.value = task.actual_start
+            if task.start_date:
+                cell_i.value = task.start_date
                 cell_i.number_format = 'YYYY-MM-DD'
             cell_i.font = self.normal_font
             cell_i.alignment = self.center_align
             cell_i.border = self.thin_border
 
-            # J列: 实际结束日期
+            # J列: 计划结束日期
             cell_j = ws.cell(row=plan_row, column=10)
-            if task.actual_end:
-                cell_j.value = task.actual_end
+            if task.end_date:
+                cell_j.value = task.end_date
                 cell_j.number_format = 'YYYY-MM-DD'
             cell_j.font = self.normal_font
             cell_j.alignment = self.center_align
             cell_j.border = self.thin_border
 
-            # K列: 进度偏差（公式：实际结束 - 计划结束，正数延期，负数提前）
+            # K列: 计划工期（公式）
             cell_k = ws.cell(row=plan_row, column=11)
-            cell_k.value = f'=IF(AND(J{plan_row}<>"",G{plan_row}<>""),J{plan_row}-G{plan_row},"")'
+            cell_k.value = f'=IF(AND(I{plan_row}<>"",J{plan_row}<>""),J{plan_row}-I{plan_row}+1,"")'
             cell_k.font = self.normal_font
             cell_k.alignment = self.center_align
             cell_k.border = self.thin_border
 
-            # L列: 状态（公式）
+            # L列: 实际开始日期
             cell_l = ws.cell(row=plan_row, column=12)
-            cell_l.value = f'=IF(J{plan_row}<>"","已完成",IF(I{plan_row}<>"","进行中","未开始"))'
+            if task.actual_start:
+                cell_l.value = task.actual_start
+                cell_l.number_format = 'YYYY-MM-DD'
             cell_l.font = self.normal_font
             cell_l.alignment = self.center_align
             cell_l.border = self.thin_border
 
-            # M列: 类型标识 - 计划
-            cell_m = ws.cell(row=plan_row, column=13, value="计划")
-            cell_m.font = Font(name="微软雅黑", size=9, color="5B9BD5")
+            # M列: 实际结束日期
+            cell_m = ws.cell(row=plan_row, column=13)
+            if task.actual_end:
+                cell_m.value = task.actual_end
+                cell_m.number_format = 'YYYY-MM-DD'
+            cell_m.font = self.normal_font
             cell_m.alignment = self.center_align
             cell_m.border = self.thin_border
 
+            # N列: 进度偏差（公式：实际结束 - 计划结束，正数延期，负数提前）
+            cell_n = ws.cell(row=plan_row, column=14)
+            cell_n.value = f'=IF(AND(M{plan_row}<>"",J{plan_row}<>""),M{plan_row}-J{plan_row},"")'
+            cell_n.font = self.normal_font
+            cell_n.alignment = self.center_align
+            cell_n.border = self.thin_border
+
+            # O列: 状态（公式）
+            cell_o = ws.cell(row=plan_row, column=15)
+            cell_o.value = f'=IF(M{plan_row}<>"","已完成",IF(L{plan_row}<>"","进行中","未开始"))'
+            cell_o.font = self.normal_font
+            cell_o.alignment = self.center_align
+            cell_o.border = self.thin_border
+
+            # P列: 类型标识 - 计划
+            cell_p = ws.cell(row=plan_row, column=16, value="计划")
+            cell_p.font = Font(name="微软雅黑", size=9, color="5B9BD5")
+            cell_p.alignment = self.center_align
+            cell_p.border = self.thin_border
+
             # ========== 实际行 (actual_row) ==========
 
-            # A-L列: 实际行空白（这些列在实际行留空或使用浅色背景）
-            for col in range(1, 13):
+            # A-O列: 实际行空白（这些列在实际行留空或使用浅色背景）
+            for col in range(1, 16):
                 cell = ws.cell(row=actual_row, column=col)
                 cell.fill = self.actual_row_fill
                 cell.border = self.thin_border
 
-            # M列: 类型标识 - 实际
-            cell_m2 = ws.cell(row=actual_row, column=13, value="实际")
-            cell_m2.font = Font(name="微软雅黑", size=9, color="E74C3C")
-            cell_m2.alignment = self.center_align
-            cell_m2.border = self.thin_border
-            cell_m2.fill = self.actual_row_fill
+            # P列: 类型标识 - 实际
+            cell_p2 = ws.cell(row=actual_row, column=16, value="实际")
+            cell_p2.font = Font(name="微软雅黑", size=9, color="E74C3C")
+            cell_p2.alignment = self.center_align
+            cell_p2.border = self.thin_border
+            cell_p2.fill = self.actual_row_fill
 
             # ========== 绘制甘特图条 ==========
 
@@ -494,8 +545,8 @@ class ExcelGenerator:
 
     def _add_conditional_formatting(self, ws, last_row: int):
         """添加条件格式（进度偏差列）"""
-        # K列进度偏差的条件格式（正数延期红，负数提前蓝，0准时绿）
-        range_str = f'K6:K{last_row}'
+        # N列进度偏差的条件格式（正数延期红，负数提前蓝，0准时绿）
+        range_str = f'N6:N{last_row}'
 
         # 延期（>0）- 红色
         ws.conditional_formatting.add(

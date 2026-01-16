@@ -15,6 +15,8 @@ import { ProjectOverview } from './components/ProjectOverview';
 import { MilestoneManager } from './components/MilestoneManager';
 import { CategoryManager } from './components/CategoryManager';
 import { PersonnelManager } from './components/PersonnelManager';
+import { BatchRaciDialog } from './components/BatchRaciDialog';
+import { ProjectDescriptionDialog } from './components/ProjectDescriptionDialog';
 import { exportExcel } from './api/tasks';
 import api from './api/client';
 import type { Task } from './types/task';
@@ -55,6 +57,8 @@ function App() {
     fetchProjects,
     compareProjects,
     switchProject,
+    updateProject,
+    saveAsTemplate,
   } = useProjectStore();
 
   const [ganttStartDate, setGanttStartDate] = useState('');  // 甘特图开始日期
@@ -62,6 +66,9 @@ function App() {
   const [showMilestoneManager, setShowMilestoneManager] = useState(false);  // 里程碑管理
   const [showCategoryManager, setShowCategoryManager] = useState(false);  // 机器分类管理
   const [showPersonnelManager, setShowPersonnelManager] = useState(false);  // 人员库管理
+  const [showBatchRaci, setShowBatchRaci] = useState(false);  // 批量RACI设置
+  const [showProjectDescription, setShowProjectDescription] = useState(false);  // 项目描述编辑
+  const [expandDescription, setExpandDescription] = useState(true);  // 项目描述展开状态
 
   // 对话框状态
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -195,7 +202,7 @@ function App() {
         project_name: projectName,
         start_date: scheduleDate,
         gantt_start_date: effectiveGanttStart,
-        gantt_days: 180,
+        gantt_days: 0,  // 0表示自动根据项目结束日期计算
         exclude_weekends: excludeWeekends,
         exclude_holidays: excludeHolidays,
       });
@@ -204,7 +211,7 @@ function App() {
       const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
-      link.download = `${projectName}_开发计划_${new Date().toISOString().slice(0, 10).replace(/-/g, '')}.xlsx`;
+      link.download = `${projectName}计划表.xlsx`;
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -218,6 +225,21 @@ function App() {
   // 对比项目
   const handleCompare = async (projectIds: string[]) => {
     await compareProjects(projectIds);
+  };
+
+  // 保存为模板
+  const handleSaveAsTemplate = async () => {
+    if (!currentProject) return;
+
+    const templateName = prompt('请输入模板名称:', `${currentProject.name}-模板`);
+    if (!templateName) return;
+
+    const result = await saveAsTemplate(currentProject.id, templateName);
+    if (result) {
+      alert(`模板"${templateName}"保存成功！`);
+    } else {
+      alert('保存模板失败');
+    }
   };
 
   return (
@@ -278,10 +300,28 @@ function App() {
               项目：{currentProject?.name || '未选择项目'}
             </h2>
             {currentProject && (
-              <div className="flex items-center gap-2 text-sm text-gray-500">
-                <span>进度: {Math.round(currentProject.completion_rate)}%</span>
-                <span>·</span>
-                <span>{currentProject.task_count} 个任务</span>
+              <div className="flex items-center gap-4">
+                <div className="flex items-center gap-2 text-sm text-gray-500">
+                  <span>进度: {Math.round(currentProject.completion_rate)}%</span>
+                  <span>·</span>
+                  <span>{currentProject.task_count} 个任务</span>
+                  <span>·</span>
+                  {(() => {
+                    // 计算项目总天数：优先用排期结果，否则用任务工期之和
+                    const totalDays = scheduleSummary?.total_days ||
+                      tasks.reduce((sum, t) => sum + (t.duration || 0), 0);
+                    return (
+                      <span className="font-medium text-primary">总天数: {totalDays} 天</span>
+                    );
+                  })()}
+                </div>
+                <button
+                  onClick={handleSaveAsTemplate}
+                  className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded transition-colors"
+                  title="将当前项目保存为模板"
+                >
+                  保存为模板
+                </button>
               </div>
             )}
           </div>
@@ -384,6 +424,82 @@ function App() {
           </div>
         </div>
 
+        {/* 项目描述卡片 */}
+        {currentProject && (
+          <div className="card p-4 mb-6">
+            <div
+              className="flex justify-between items-center cursor-pointer"
+              onClick={() => setExpandDescription(!expandDescription)}
+            >
+              <h2 className="text-lg font-bold flex items-center gap-2">
+                <span className={`transform transition-transform ${expandDescription ? 'rotate-90' : ''}`}>
+                  ▶
+                </span>
+                项目描述
+              </h2>
+              <button
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setShowProjectDescription(true);
+                }}
+                className="text-sm text-primary hover:text-primary/80"
+              >
+                编辑
+              </button>
+            </div>
+
+            {expandDescription && (
+              <div className="mt-4 grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {/* 基本信息 */}
+                <div className="space-y-2">
+                  <div className="flex">
+                    <span className="text-gray-500 w-20">客户:</span>
+                    <span className="font-medium">{currentProject.customer || '-'}</span>
+                  </div>
+                  <div className="flex">
+                    <span className="text-gray-500 w-20">机型:</span>
+                    <span className="font-medium">{currentProject.model || '-'}</span>
+                  </div>
+                  <div className="flex">
+                    <span className="text-gray-500 w-20">整机编号:</span>
+                    <span className="font-medium">{currentProject.machine_no || '-'}</span>
+                  </div>
+                  <div className="flex">
+                    <span className="text-gray-500 w-20">分类:</span>
+                    <span className="font-medium">{currentProject.category || '-'}</span>
+                  </div>
+                </div>
+
+                {/* 产品规格 */}
+                <div>
+                  <div className="text-gray-500 mb-1">产品规格:</div>
+                  <div className="bg-gray-50 p-2 rounded text-sm whitespace-pre-wrap min-h-[80px] max-h-[120px] overflow-y-auto">
+                    {currentProject.specifications || '未填写'}
+                  </div>
+                </div>
+
+                {/* 定制内容 */}
+                <div>
+                  <div className="text-gray-500 mb-1">定制内容:</div>
+                  <div className="bg-gray-50 p-2 rounded text-sm whitespace-pre-wrap min-h-[80px] max-h-[120px] overflow-y-auto">
+                    {currentProject.custom_requirements || '未填写'}
+                  </div>
+                </div>
+
+                {/* 项目简介（如果有，占满一行） */}
+                {currentProject.description && (
+                  <div className="col-span-full">
+                    <div className="text-gray-500 mb-1">项目简介:</div>
+                    <div className="bg-gray-50 p-2 rounded text-sm">
+                      {currentProject.description}
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* 任务列表卡片 */}
         <div className="card p-4">
           <div className="flex justify-between items-center mb-4">
@@ -416,6 +532,13 @@ function App() {
                 disabled={selectedIndices.length !== 1}
               >
                 排除任务
+              </button>
+              <button
+                className="btn btn-secondary text-sm py-1"
+                onClick={() => setShowBatchRaci(true)}
+                disabled={tasks.length === 0}
+              >
+                批量RACI
               </button>
               <button
                 className="btn btn-secondary text-sm py-1"
@@ -606,6 +729,28 @@ function App() {
       <PersonnelManager
         isOpen={showPersonnelManager}
         onClose={() => setShowPersonnelManager(false)}
+      />
+
+      <BatchRaciDialog
+        isOpen={showBatchRaci}
+        onClose={() => setShowBatchRaci(false)}
+        selectedIndices={selectedIndices}
+        taskCount={tasks.length}
+        onSuccess={() => {
+          // 更新任务列表
+          loadTemplate();
+        }}
+      />
+
+      <ProjectDescriptionDialog
+        isOpen={showProjectDescription}
+        onClose={() => setShowProjectDescription(false)}
+        project={currentProject}
+        onSave={async (updates) => {
+          if (currentProject) {
+            await updateProject(currentProject.id, updates);
+          }
+        }}
       />
     </div>
   );
