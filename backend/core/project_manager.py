@@ -140,7 +140,10 @@ class ProjectManager:
         )
 
         # 加载任务模板
-        if template_id and template_id != "builtin_apqp":
+        if template_id == "empty":
+            # 空白项目，不加载任何任务
+            tasks = []
+        elif template_id and template_id != "builtin_apqp":
             # 从自定义模板复制
             tasks, _ = self.load_project_data(template_id)
             # 清除进度数据
