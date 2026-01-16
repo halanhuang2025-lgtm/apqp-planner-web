@@ -213,26 +213,28 @@ class ProjectManager:
         self._save_index()
         return True
 
-    def load_project_data(self, project_id: str) -> Tuple[List[Task], ProgressManager]:
-        """加载项目数据"""
+    def load_project_data(self, project_id: str) -> Tuple[List[Task], ProgressManager, Optional[List[str]]]:
+        """加载项目数据，返回 (tasks, progress_manager, milestones)"""
         data_file = self.config_dir / f"{project_id}.json"
 
         if not data_file.exists():
-            return [], ProgressManager()
+            return [], ProgressManager(), None
 
         config_manager = ConfigManager(str(self.config_dir))
         progress_manager = ProgressManager()
         tasks = config_manager.load_tasks(str(data_file), progress_manager)
+        milestones = config_manager.load_milestones(str(data_file))
 
-        return tasks, progress_manager
+        return tasks, progress_manager, milestones
 
     def save_project_data(self, project_id: str, tasks: List[Task],
-                          progress_manager: ProgressManager):
+                          progress_manager: ProgressManager,
+                          milestones: Optional[List[str]] = None):
         """保存项目数据"""
         data_file = self.config_dir / f"{project_id}.json"
 
         config_manager = ConfigManager(str(self.config_dir))
-        config_manager.save_to_path(tasks, str(data_file), progress_manager)
+        config_manager.save_to_path(tasks, str(data_file), progress_manager, milestones)
 
         # 更新项目统计
         project = self.projects.get(project_id)

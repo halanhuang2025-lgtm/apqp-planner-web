@@ -91,3 +91,35 @@ export const getProgressHistory = async (taskIndex: number): Promise<ProgressRec
   const response = await api.get(`/api/progress/history/${taskIndex}`);
   return response.data.records || [];
 };
+
+// ============ 里程碑管理 API ============
+
+// 获取里程碑列表
+export const getMilestones = async (): Promise<string[]> => {
+  const response = await api.get('/api/milestones');
+  return response.data.milestones;
+};
+
+// 添加里程碑
+export const addMilestone = async (name: string): Promise<string[]> => {
+  const response = await api.post('/api/milestones', { name });
+  return response.data.milestones;
+};
+
+// 删除里程碑
+export const deleteMilestone = async (name: string): Promise<string[]> => {
+  const response = await api.delete(`/api/milestones/${encodeURIComponent(name)}`);
+  return response.data.milestones;
+};
+
+// 重命名里程碑
+export const updateMilestone = async (oldName: string, newName: string): Promise<string[]> => {
+  const response = await api.put(`/api/milestones/${encodeURIComponent(oldName)}`, { name: newName });
+  return response.data.milestones;
+};
+
+// 重排里程碑
+export const reorderMilestones = async (milestones: string[]): Promise<string[]> => {
+  const response = await api.put('/api/milestones/reorder', { milestones });
+  return response.data.milestones;
+};

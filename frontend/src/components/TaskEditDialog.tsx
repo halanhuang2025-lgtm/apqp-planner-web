@@ -7,6 +7,7 @@ import { useState, useEffect } from 'react';
 import axios from 'axios';
 import type { Task, ProgressRecord } from '../types/task';
 import { recordProgress, getProgressHistory } from '../api/tasks';
+import { useTaskStore } from '../stores/taskStore';
 
 interface TaskEditDialogProps {
   task: Task | null;
@@ -17,6 +18,9 @@ interface TaskEditDialogProps {
 }
 
 export function TaskEditDialog({ task, isOpen, onClose, onSave, mode }: TaskEditDialogProps) {
+  // 获取里程碑列表
+  const { milestones, fetchMilestones } = useTaskStore();
+
   const [formData, setFormData] = useState<Omit<Task, 'index'>>({
     milestone: '',
     task_no: '',
@@ -41,6 +45,13 @@ export function TaskEditDialog({ task, isOpen, onClose, onSave, mode }: TaskEdit
   const [history, setHistory] = useState<ProgressRecord[]>([]);
   const [showHistory, setShowHistory] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
+
+  // 加载里程碑列表
+  useEffect(() => {
+    if (isOpen) {
+      fetchMilestones();
+    }
+  }, [isOpen, fetchMilestones]);
 
   // 当 task 变化时更新表单
   useEffect(() => {
@@ -221,12 +232,9 @@ export function TaskEditDialog({ task, isOpen, onClose, onSave, mode }: TaskEdit
                   required
                 >
                   <option value="">请选择</option>
-                  <option value="概念设计">概念设计</option>
-                  <option value="产品设计">产品设计</option>
-                  <option value="样机试制">样机试制</option>
-                  <option value="过程设计">过程设计</option>
-                  <option value="试生产">试生产</option>
-                  <option value="量产启动">量产启动</option>
+                  {milestones.map((m) => (
+                    <option key={m} value={m}>{m}</option>
+                  ))}
                 </select>
               </div>
 

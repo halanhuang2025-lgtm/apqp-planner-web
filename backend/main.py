@@ -55,6 +55,19 @@ app.add_middleware(
 
 class AppState:
     """应用状态 - 支持多项目"""
+
+    # 默认里程碑列表
+    DEFAULT_MILESTONES = [
+        "概念设计",
+        "选供应商报价",
+        "评审",
+        "定案",
+        "设计定案",
+        "模具样板",
+        "验证测试",
+        "量产准备",
+    ]
+
     def __init__(self):
         self.project_manager = ProjectManager()
         self.config_manager = ConfigManager()
@@ -63,6 +76,7 @@ class AppState:
         self.current_project: Optional[Project] = None
         self.tasks: List[Task] = []
         self.progress_manager = ProgressManager()
+        self.milestones: List[str] = self.DEFAULT_MILESTONES.copy()
 
     def ensure_project_loaded(self):
         """确保有项目已加载"""
@@ -85,7 +99,8 @@ class AppState:
             self.project_manager.save_project_data(
                 self.current_project.id,
                 self.tasks,
-                self.progress_manager
+                self.progress_manager,
+                self.milestones
             )
 
         # 加载新项目
@@ -93,11 +108,13 @@ class AppState:
         if not project:
             return False
 
-        tasks, progress_manager = self.project_manager.load_project_data(project_id)
+        tasks, progress_manager, milestones = self.project_manager.load_project_data(project_id)
 
         self.current_project = project
         self.tasks = tasks
         self.progress_manager = progress_manager
+        # 如果项目有自定义里程碑则使用，否则使用默认
+        self.milestones = milestones if milestones else self.DEFAULT_MILESTONES.copy()
 
         return True
 
@@ -107,7 +124,8 @@ class AppState:
             self.project_manager.save_project_data(
                 self.current_project.id,
                 self.tasks,
-                self.progress_manager
+                self.progress_manager,
+                self.milestones
             )
 
 app_state = AppState()
@@ -530,6 +548,117 @@ async def list_templates():
     return {
         "templates": [builtin_template] + [t.to_dict() for t in templates]
     }
+
+
+# ============ 里程碑管理 API ============
+
+@app.get("/api/milestones")
+async def get_milestones():
+    """获取当前项目的里程碑列表"""
+    app_state.ensure_project_loaded()
+    return {"milestones": app_state.milestones}
+
+
+class MilestoneRequest(BaseModel):
+    """里程碑请求"""
+    name: str
+
+
+@app.post("/api/milestones")
+async def add_milestone(request: MilestoneRequest):
+    """添加里程碑"""
+    app_state.ensure_project_loaded()
+
+    name = request.name.strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="里程碑名称不能为空")
+
+    if name in app_state.milestones:
+        raise HTTPException(status_code=400, detail="里程碑已存在")
+
+    app_state.milestones.append(name)
+    app_state.auto_save()
+
+    return {"milestones": app_state.milestones, "message": "里程碑添加成功"}
+
+
+@app.delete("/api/milestones/{name}")
+async def delete_milestone(name: str):
+    """删除里程碑"""
+    app_state.ensure_project_loaded()
+
+    # URL 解码
+    import urllib.parse
+    name = urllib.parse.unquote(name)
+
+    if name not in app_state.milestones:
+        raise HTTPException(status_code=404, detail="里程碑不存在")
+
+    # 检查是否有任务使用该里程碑
+    tasks_using = [t for t in app_state.tasks if t.milestone == name]
+    if tasks_using:
+        raise HTTPException(
+            status_code=400,
+            detail=f"有 {len(tasks_using)} 个任务正在使用此里程碑，请先修改这些任务"
+        )
+
+    app_state.milestones.remove(name)
+    app_state.auto_save()
+
+    return {"milestones": app_state.milestones, "message": "里程碑删除成功"}
+
+
+class ReorderMilestonesRequest(BaseModel):
+    """重排里程碑请求"""
+    milestones: List[str]
+
+
+@app.put("/api/milestones/reorder")
+async def reorder_milestones(request: ReorderMilestonesRequest):
+    """重新排序里程碑"""
+    app_state.ensure_project_loaded()
+
+    # 验证里程碑列表
+    if set(request.milestones) != set(app_state.milestones):
+        raise HTTPException(status_code=400, detail="里程碑列表不匹配")
+
+    app_state.milestones = request.milestones
+    app_state.auto_save()
+
+    return {"milestones": app_state.milestones, "message": "里程碑排序更新成功"}
+
+
+@app.put("/api/milestones/{name}")
+async def update_milestone(name: str, request: MilestoneRequest):
+    """重命名里程碑"""
+    app_state.ensure_project_loaded()
+
+    # URL 解码
+    import urllib.parse
+    name = urllib.parse.unquote(name)
+
+    if name not in app_state.milestones:
+        raise HTTPException(status_code=404, detail="里程碑不存在")
+
+    new_name = request.name.strip()
+    if not new_name:
+        raise HTTPException(status_code=400, detail="里程碑名称不能为空")
+
+    if new_name != name and new_name in app_state.milestones:
+        raise HTTPException(status_code=400, detail="新名称已存在")
+
+    # 更新里程碑名称
+    index = app_state.milestones.index(name)
+    app_state.milestones[index] = new_name
+
+    # 同时更新所有使用该里程碑的任务
+    for task in app_state.tasks:
+        if task.milestone == name:
+            task.milestone = new_name
+
+    app_state.auto_save()
+
+    return {"milestones": app_state.milestones, "message": "里程碑更新成功"}
 
 
 # ============ Excel 导出 API ============

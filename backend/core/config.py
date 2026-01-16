@@ -103,7 +103,8 @@ class ConfigManager:
         return sorted(configs)
 
     def save_to_path(self, tasks: List[Task], filepath: str,
-                     progress_manager: Optional[ProgressManager] = None) -> None:
+                     progress_manager: Optional[ProgressManager] = None,
+                     milestones: Optional[List[str]] = None) -> None:
         """
         保存任务配置到指定路径
 
@@ -111,9 +112,10 @@ class ConfigManager:
             tasks: 任务列表
             filepath: 完整文件路径
             progress_manager: 进度管理器（可选）
+            milestones: 里程碑列表（可选）
         """
         data = {
-            "version": "2.0",
+            "version": "2.1",
             "created_at": datetime.now().isoformat(),
             "tasks": [task.to_dict() for task in tasks]
         }
@@ -122,8 +124,21 @@ class ConfigManager:
         if progress_manager:
             data["progress_records"] = progress_manager.to_list()
 
+        # 保存里程碑
+        if milestones:
+            data["milestones"] = milestones
+
         with open(filepath, 'w', encoding='utf-8') as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
+
+    def load_milestones(self, filepath: str) -> Optional[List[str]]:
+        """从文件加载里程碑列表"""
+        try:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+            return data.get("milestones")
+        except Exception:
+            return None
 
 
 def get_template_path() -> str:

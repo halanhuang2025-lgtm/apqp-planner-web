@@ -14,6 +14,9 @@ interface TaskState {
   isLoading: boolean;
   error: string | null;
 
+  // 里程碑
+  milestones: string[];
+
   // 排期相关
   scheduleMode: 'forward' | 'backward';
   scheduleDate: string;
@@ -43,6 +46,13 @@ interface TaskState {
   moveTask: (index: number, direction: 'up' | 'down') => Promise<void>;
   toggleExclude: (index: number) => Promise<void>;
   calculateSchedule: () => Promise<void>;
+
+  // 里程碑 Actions
+  fetchMilestones: () => Promise<void>;
+  addMilestone: (name: string) => Promise<boolean>;
+  deleteMilestone: (name: string) => Promise<boolean>;
+  updateMilestone: (oldName: string, newName: string) => Promise<boolean>;
+  reorderMilestones: (milestones: string[]) => Promise<void>;
 }
 
 // 获取今天日期
@@ -54,6 +64,7 @@ export const useTaskStore = create<TaskState>((set, get) => ({
   selectedIndices: [],
   isLoading: false,
   error: null,
+  milestones: [],
   scheduleMode: 'forward',
   scheduleDate: today,
   excludeWeekends: true,
@@ -195,6 +206,59 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       });
     } catch (error) {
       set({ error: '计算排期失败', isLoading: false });
+    }
+  },
+
+  // 里程碑管理
+  fetchMilestones: async () => {
+    try {
+      const milestones = await taskApi.getMilestones();
+      set({ milestones });
+    } catch (error) {
+      console.error('获取里程碑失败:', error);
+    }
+  },
+
+  addMilestone: async (name) => {
+    try {
+      const milestones = await taskApi.addMilestone(name);
+      set({ milestones });
+      return true;
+    } catch (error) {
+      set({ error: '添加里程碑失败' });
+      return false;
+    }
+  },
+
+  deleteMilestone: async (name) => {
+    try {
+      const milestones = await taskApi.deleteMilestone(name);
+      set({ milestones });
+      return true;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : '删除里程碑失败';
+      set({ error: message });
+      return false;
+    }
+  },
+
+  updateMilestone: async (oldName, newName) => {
+    try {
+      const milestones = await taskApi.updateMilestone(oldName, newName);
+      set({ milestones });
+      return true;
+    } catch (error) {
+      set({ error: '更新里程碑失败' });
+      return false;
+    }
+  },
+
+  reorderMilestones: async (milestones) => {
+    try {
+      const updated = await taskApi.reorderMilestones(milestones);
+      set({ milestones: updated });
+    } catch (error) {
+      set({ error: '重排里程碑失败' });
     }
   },
 }));

@@ -12,6 +12,7 @@ import { ProjectListModal } from './components/ProjectListModal';
 import { CreateProjectDialog } from './components/CreateProjectDialog';
 import { ProjectCompareView } from './components/ProjectCompareView';
 import { ProjectOverview } from './components/ProjectOverview';
+import { MilestoneManager } from './components/MilestoneManager';
 import { exportExcel } from './api/tasks';
 import api from './api/client';
 import type { Task } from './types/task';
@@ -56,6 +57,7 @@ function App() {
 
   const [ganttStartDate, setGanttStartDate] = useState('');  // 甘特图开始日期
   const [showOverview, setShowOverview] = useState(false);  // 项目总览
+  const [showMilestoneManager, setShowMilestoneManager] = useState(false);  // 里程碑管理
 
   // 对话框状态
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -220,6 +222,12 @@ function App() {
             className="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm transition-colors"
           >
             项目总览
+          </button>
+          <button
+            onClick={() => setShowMilestoneManager(true)}
+            className="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm transition-colors"
+          >
+            里程碑
           </button>
         </div>
         <button
@@ -537,6 +545,11 @@ function App() {
           await switchProject(projectId);
           loadTemplate();
         }}
+      />
+
+      <MilestoneManager
+        isOpen={showMilestoneManager}
+        onClose={() => setShowMilestoneManager(false)}
       />
     </div>
   );
