@@ -4,6 +4,7 @@
  */
 
 import { useState, useEffect } from 'react';
+import axios from 'axios';
 import type { Task, ProgressRecord } from '../types/task';
 import { recordProgress, getProgressHistory } from '../api/tasks';
 
@@ -109,6 +110,25 @@ export function TaskEditDialog({ task, isOpen, onClose, onSave, mode }: TaskEdit
     }
   };
 
+  const getErrorMessage = (error: unknown) => {
+    if (axios.isAxiosError(error)) {
+      const detail = error.response?.data?.detail;
+      if (typeof detail === 'string') {
+        return detail;
+      }
+      if (error.response?.status) {
+        return `请求失败 (${error.response.status})`;
+      }
+      return error.message || '请求失败';
+    }
+
+    if (error instanceof Error) {
+      return error.message;
+    }
+
+    return '未知错误';
+  };
+
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -139,11 +159,11 @@ export function TaskEditDialog({ task, isOpen, onClose, onSave, mode }: TaskEdit
       }
 
       // 保存任务
-      onSave(updatedFormData);
+      await onSave(updatedFormData);
       onClose();
     } catch (error) {
       console.error('保存失败:', error);
-      alert('保存失败，请重试');
+      alert(`保存失败：${getErrorMessage(error)}`);
     } finally {
       setIsSaving(false);
     }

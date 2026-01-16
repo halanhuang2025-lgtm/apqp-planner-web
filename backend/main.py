@@ -24,7 +24,8 @@ sys.path.insert(0, str(Path(__file__).parent))
 from core import (
     Task, TaskStatus, Scheduler,
     ConfigManager, load_template_tasks,
-    ProgressManager, ExcelGenerator
+    ProgressManager, ExcelGenerator,
+    Project, ProjectManager
 )
 
 # ============ 应用初始化 ============
@@ -50,14 +51,64 @@ app.add_middleware(
 )
 
 
-# ============ 全局状态（单用户本地模式） ============
+# ============ 全局状态（支持多项目） ============
 
 class AppState:
-    """应用状态"""
+    """应用状态 - 支持多项目"""
     def __init__(self):
+        self.project_manager = ProjectManager()
+        self.config_manager = ConfigManager()
+
+        # 当前活动项目
+        self.current_project: Optional[Project] = None
         self.tasks: List[Task] = []
         self.progress_manager = ProgressManager()
-        self.config_manager = ConfigManager()
+
+    def ensure_project_loaded(self):
+        """确保有项目已加载"""
+        if self.current_project:
+            return
+
+        # 尝试加载默认项目
+        projects = self.project_manager.list_projects(status="active")
+        if projects:
+            self.switch_to_project(projects[0].id)
+        else:
+            # 创建默认项目
+            project = self.project_manager.create_project("默认项目")
+            self.switch_to_project(project.id)
+
+    def switch_to_project(self, project_id: str) -> bool:
+        """切换到指定项目"""
+        # 保存当前项目
+        if self.current_project:
+            self.project_manager.save_project_data(
+                self.current_project.id,
+                self.tasks,
+                self.progress_manager
+            )
+
+        # 加载新项目
+        project = self.project_manager.get_project(project_id)
+        if not project:
+            return False
+
+        tasks, progress_manager = self.project_manager.load_project_data(project_id)
+
+        self.current_project = project
+        self.tasks = tasks
+        self.progress_manager = progress_manager
+
+        return True
+
+    def auto_save(self):
+        """自动保存当前项目"""
+        if self.current_project:
+            self.project_manager.save_project_data(
+                self.current_project.id,
+                self.tasks,
+                self.progress_manager
+            )
 
 app_state = AppState()
 
@@ -186,6 +237,10 @@ async def update_task(index: int, task: TaskModel):
 
     updated_task = model_to_task(task)
     app_state.tasks[index] = updated_task
+
+    # 自动保存以更新项目统计
+    app_state.auto_save()
+
     return task_to_model(updated_task, index)
 
 
@@ -301,11 +356,179 @@ async def calculate_backward(request: ScheduleRequest):
 
 @app.get("/api/config/template")
 async def load_template():
-    """加载 APQP 标准模板"""
-    app_state.tasks = load_template_tasks()
+    """加载 APQP 标准模板（确保当前有项目）"""
+    app_state.ensure_project_loaded()
     return {
         "message": f"已加载 {len(app_state.tasks)} 个任务",
+        "tasks": [task_to_model(task, i) for i, task in enumerate(app_state.tasks)],
+        "project": app_state.current_project.to_dict() if app_state.current_project else None
+    }
+
+
+# ============ 项目管理 API ============
+
+class ProjectModel(BaseModel):
+    """项目创建模型"""
+    name: str
+    description: str = ""
+    template_id: Optional[str] = None
+
+
+class ProjectUpdateModel(BaseModel):
+    """项目更新模型"""
+    name: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+    schedule_mode: Optional[str] = None
+    schedule_date: Optional[str] = None
+    exclude_weekends: Optional[bool] = None
+    exclude_holidays: Optional[bool] = None
+
+
+class CompareRequest(BaseModel):
+    """项目对比请求"""
+    project_ids: List[str]
+
+
+class DuplicateRequest(BaseModel):
+    """复制项目请求"""
+    new_name: str
+
+
+class SaveAsTemplateRequest(BaseModel):
+    """保存为模板请求"""
+    template_name: str
+
+
+@app.get("/api/projects")
+async def list_projects(status: Optional[str] = None):
+    """获取项目列表"""
+    projects = app_state.project_manager.list_projects(status)
+    return {
+        "projects": [p.to_dict() for p in projects],
+        "default_project_id": app_state.current_project.id if app_state.current_project else None
+    }
+
+
+@app.post("/api/projects")
+async def create_project(project: ProjectModel):
+    """创建新项目"""
+    new_project = app_state.project_manager.create_project(
+        name=project.name,
+        description=project.description,
+        template_id=project.template_id
+    )
+    return {"project": new_project.to_dict(), "message": "项目创建成功"}
+
+
+@app.get("/api/projects/{project_id}")
+async def get_project(project_id: str):
+    """获取项目详情"""
+    project = app_state.project_manager.get_project(project_id)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    tasks, _ = app_state.project_manager.load_project_data(project_id)
+    return {
+        "project": project.to_dict(),
+        "tasks": [task_to_model(task, i) for i, task in enumerate(tasks)]
+    }
+
+
+@app.put("/api/projects/{project_id}")
+async def update_project(project_id: str, data: ProjectUpdateModel):
+    """更新项目信息"""
+    updates = data.dict(exclude_none=True)
+    project = app_state.project_manager.update_project(project_id, updates)
+    if not project:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    # 如果是当前项目，同步更新
+    if app_state.current_project and app_state.current_project.id == project_id:
+        app_state.current_project = project
+
+    return {"project": project.to_dict()}
+
+
+@app.delete("/api/projects/{project_id}")
+async def delete_project(project_id: str):
+    """删除项目"""
+    # 不能删除当前项目
+    if app_state.current_project and app_state.current_project.id == project_id:
+        raise HTTPException(status_code=400, detail="不能删除当前正在使用的项目")
+
+    success = app_state.project_manager.delete_project(project_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    return {"success": True}
+
+
+@app.post("/api/projects/{project_id}/switch")
+async def switch_project(project_id: str):
+    """切换当前项目"""
+    success = app_state.switch_to_project(project_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="项目不存在")
+
+    return {
+        "success": True,
+        "project": app_state.current_project.to_dict(),
         "tasks": [task_to_model(task, i) for i, task in enumerate(app_state.tasks)]
+    }
+
+
+@app.post("/api/projects/{project_id}/save")
+async def save_project(project_id: str):
+    """手动保存当前项目"""
+    if not app_state.current_project or app_state.current_project.id != project_id:
+        raise HTTPException(status_code=400, detail="项目未加载")
+
+    app_state.auto_save()
+    return {"success": True}
+
+
+@app.post("/api/projects/{project_id}/duplicate")
+async def duplicate_project(project_id: str, request: DuplicateRequest):
+    """复制项目"""
+    new_project = app_state.project_manager.duplicate_project(project_id, request.new_name)
+    if not new_project:
+        raise HTTPException(status_code=404, detail="源项目不存在")
+    return new_project.to_dict()
+
+
+@app.post("/api/projects/{project_id}/save-as-template")
+async def save_as_template(project_id: str, request: SaveAsTemplateRequest):
+    """将项目保存为模板"""
+    template = app_state.project_manager.save_as_template(project_id, request.template_name)
+    if not template:
+        raise HTTPException(status_code=404, detail="项目不存在")
+    return template.to_dict()
+
+
+@app.post("/api/projects/compare")
+async def compare_projects(request: CompareRequest):
+    """对比多个项目"""
+    if len(request.project_ids) < 2 or len(request.project_ids) > 4:
+        raise HTTPException(status_code=400, detail="请选择2-4个项目进行对比")
+
+    comparison_data = app_state.project_manager.get_comparison_data(request.project_ids)
+    return {"comparison": comparison_data}
+
+
+@app.get("/api/templates")
+async def list_templates():
+    """获取模板列表"""
+    templates = app_state.project_manager.list_projects(status="template")
+    builtin_template = {
+        "id": "builtin_apqp",
+        "name": "APQP 标准模板",
+        "description": "新产品开发43项标准任务",
+        "status": "template",
+        "task_count": 43,
+        "is_builtin": True
+    }
+    return {
+        "templates": [builtin_template] + [t.to_dict() for t in templates]
     }
 
 
@@ -465,6 +688,9 @@ async def record_progress(request: ProgressRecordRequest):
     # 进度 = 100% 且未设置实际结束日期 → 自动设置
     if request.progress == 100 and not task.actual_end:
         task.actual_end = actual_date
+
+    # 自动保存以更新项目统计
+    app_state.auto_save()
 
     return {
         "record_id": record.record_id,

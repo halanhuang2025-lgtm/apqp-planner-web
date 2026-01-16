@@ -5,7 +5,13 @@
 
 import { useEffect, useState } from 'react';
 import { useTaskStore } from './stores/taskStore';
+import { useProjectStore } from './stores/projectStore';
 import { TaskEditDialog } from './components/TaskEditDialog';
+import { ProjectSelector } from './components/ProjectSelector';
+import { ProjectListModal } from './components/ProjectListModal';
+import { CreateProjectDialog } from './components/CreateProjectDialog';
+import { ProjectCompareView } from './components/ProjectCompareView';
+import { ProjectOverview } from './components/ProjectOverview';
 import { exportExcel } from './api/tasks';
 import api from './api/client';
 import type { Task } from './types/task';
@@ -35,18 +41,39 @@ function App() {
     calculateSchedule,
   } = useTaskStore();
 
-  const [projectName, setProjectName] = useState('新产品开发项目');
+  const {
+    currentProject,
+    showProjectList,
+    showCreateDialog,
+    showCompareView,
+    setShowProjectList,
+    setShowCreateDialog,
+    setShowCompareView,
+    fetchProjects,
+    compareProjects,
+    switchProject,
+  } = useProjectStore();
+
   const [ganttStartDate, setGanttStartDate] = useState('');  // 甘特图开始日期
+  const [showOverview, setShowOverview] = useState(false);  // 项目总览
 
   // 对话框状态
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<'edit' | 'add'>('edit');
   const [editingTask, setEditingTask] = useState<Task | null>(null);
 
-  // 初始加载模板
+  // 初始加载项目列表和任务
   useEffect(() => {
+    fetchProjects();
     loadTemplate();
   }, []);
+
+  // 项目切换时重新加载任务
+  useEffect(() => {
+    if (currentProject) {
+      loadTemplate();
+    }
+  }, [currentProject?.id]);
 
   // 页面关闭时退出服务器
   useEffect(() => {
@@ -145,6 +172,8 @@ function App() {
   // 导出 Excel
   const handleExportExcel = async () => {
     try {
+      // 项目名称：优先使用当前项目名称，否则使用默认名称
+      const projectName = currentProject?.name || '新产品开发项目';
       // 甘特图开始日期：优先使用用户设置，否则使用排期日期
       const effectiveGanttStart = ganttStartDate || scheduleDate;
       const blob = await exportExcel({
@@ -171,11 +200,28 @@ function App() {
     }
   };
 
+  // 对比项目
+  const handleCompare = async (projectIds: string[]) => {
+    await compareProjects(projectIds);
+  };
+
   return (
     <div className="min-h-screen bg-gray-100">
       {/* 顶部标题栏 */}
       <header className="bg-primary text-white py-4 px-6 shadow-md flex justify-between items-center">
-        <h1 className="text-xl font-bold">APQP 项目计划生成器 v2.1 - Web 版</h1>
+        <div className="flex items-center gap-6">
+          <h1 className="text-xl font-bold">APQP 项目计划生成器 v2.2</h1>
+          <ProjectSelector
+            onOpenList={() => setShowProjectList(true)}
+            onCreateProject={() => setShowCreateDialog(true)}
+          />
+          <button
+            onClick={() => setShowOverview(true)}
+            className="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm transition-colors"
+          >
+            项目总览
+          </button>
+        </div>
         <button
           onClick={handleExit}
           className="px-4 py-2 bg-red-500 hover:bg-red-600 text-white rounded text-sm transition-colors"
@@ -194,21 +240,20 @@ function App() {
 
         {/* 项目信息卡片 */}
         <div className="card p-4 mb-6">
-          <h2 className="text-lg font-bold mb-4">项目信息</h2>
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-lg font-bold">
+              项目：{currentProject?.name || '未选择项目'}
+            </h2>
+            {currentProject && (
+              <div className="flex items-center gap-2 text-sm text-gray-500">
+                <span>进度: {Math.round(currentProject.completion_rate)}%</span>
+                <span>·</span>
+                <span>{currentProject.task_count} 个任务</span>
+              </div>
+            )}
+          </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* 项目名称 */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">
-                项目名称
-              </label>
-              <input
-                type="text"
-                className="input"
-                value={projectName}
-                onChange={(e) => setProjectName(e.target.value)}
-              />
-            </div>
 
             {/* 排期方式 */}
             <div>
@@ -459,6 +504,39 @@ function App() {
         onClose={() => setDialogOpen(false)}
         onSave={handleSaveTask}
         mode={dialogMode}
+      />
+
+      {/* 项目列表弹窗 */}
+      <ProjectListModal
+        isOpen={showProjectList}
+        onClose={() => setShowProjectList(false)}
+        onCreateProject={() => {
+          setShowProjectList(false);
+          setShowCreateDialog(true);
+        }}
+        onCompare={handleCompare}
+      />
+
+      {/* 创建项目对话框 */}
+      <CreateProjectDialog
+        isOpen={showCreateDialog}
+        onClose={() => setShowCreateDialog(false)}
+      />
+
+      {/* 项目对比视图 */}
+      <ProjectCompareView
+        isOpen={showCompareView}
+        onClose={() => setShowCompareView(false)}
+      />
+
+      {/* 项目总览 */}
+      <ProjectOverview
+        isOpen={showOverview}
+        onClose={() => setShowOverview(false)}
+        onSwitchProject={async (projectId) => {
+          await switchProject(projectId);
+          loadTemplate();
+        }}
       />
     </div>
   );

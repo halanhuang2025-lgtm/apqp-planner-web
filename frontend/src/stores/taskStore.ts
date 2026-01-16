@@ -5,6 +5,7 @@
 import { create } from 'zustand';
 import type { Task, ScheduleRequest } from '../types/task';
 import * as taskApi from '../api/tasks';
+import { useProjectStore } from './projectStore';
 
 interface TaskState {
   // 状态
@@ -129,8 +130,11 @@ export const useTaskStore = create<TaskState>((set, get) => ({
       const tasks = [...get().tasks];
       tasks[index] = updatedTask;
       set({ tasks });
+      // 刷新项目数据以更新 completion_rate（异步执行，不阻塞任务更新）
+      useProjectStore.getState().fetchProjects().catch(() => {});
     } catch (error) {
       set({ error: '更新任务失败' });
+      throw error; // 重新抛出以便调用方处理
     }
   },
 
