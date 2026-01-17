@@ -81,3 +81,88 @@ export interface BatchImportDetail {
   imported: number;
   skipped: number;
 }
+
+// 人员工作负荷类型
+export interface PersonnelWorkloadTask {
+  task_no: string;
+  task_name: string;
+  milestone: string;
+  duration: number;      // 任务工期
+  progress: number;
+  status: string;
+  role: 'R' | 'A' | 'C' | 'I';
+  contribution: number;  // 该任务贡献的 EWL
+}
+
+export interface EwlByRole {
+  R: number;
+  A: number;
+  C: number;
+  I: number;
+}
+
+export interface PersonnelWorkload {
+  person_name: string;
+  department: string;
+  ewl: number;                    // 等效工作量（天）
+  ewl_by_role: EwlByRole;         // 按角色分解的 EWL
+  task_count: number;             // 未完成任务数
+  total_task_count: number;       // 总任务数
+  tasks: PersonnelWorkloadTask[];
+  roles: {
+    R: number;
+    A: number;
+    C: number;
+    I: number;
+  };
+  summary: {
+    not_started: number;
+    in_progress: number;
+    completed: number;
+    paused: number;
+  };
+  avg_progress: number;
+}
+
+export interface PersonnelWorkloadResponse {
+  workload_data: PersonnelWorkload[];
+  total_personnel: number;
+  total_tasks: number;
+  total_ewl: number;              // 总 EWL
+  avg_ewl: number;                // 平均 EWL
+}
+
+// 项目仪表盘类型
+export interface TaskStats {
+  total: number;
+  completed: number;
+  in_progress: number;
+  not_started: number;
+  paused: number;
+  completion_rate: number;
+}
+
+export interface MilestoneStat {
+  milestone: string;
+  total_tasks: number;
+  completed_tasks: number;
+  avg_progress: number;
+}
+
+export interface StatusDistribution {
+  status: string;
+  count: number;
+  percentage: number;
+}
+
+export interface ProgressTrend {
+  date: string;
+  completion_rate: number;
+}
+
+export interface ProjectDashboardData {
+  task_stats: TaskStats;
+  milestone_stats: MilestoneStat[];
+  status_distribution: StatusDistribution[];
+  progress_trend: ProgressTrend[];
+}

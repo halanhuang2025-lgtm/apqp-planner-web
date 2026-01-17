@@ -1366,6 +1366,206 @@ async def download_batch_progress_template(record_date: Optional[str] = None):
     )
 
 
+# ============ 报表 API ============
+
+@app.get("/api/reports/personnel-workload")
+async def get_personnel_workload():
+    """获取人员工作负荷数据，使用 EWL（等效工作量）计算"""
+    app_state.ensure_project_loaded()
+
+    # EWL 角色权重
+    ROLE_WEIGHTS = {
+        "R": 1.0,   # 负责人，全额计算
+        "A": 0.1,   # 批准人，10%
+        "C": 0.1,   # 咨询人，10%
+        "I": 0.1,   # 知会人，10%
+    }
+
+    # 收集每个人的任务
+    person_tasks: dict = {}  # person_name -> {tasks: [], roles: {}, ewl_by_role: {}}
+
+    for i, task in enumerate(app_state.tasks):
+        if task.excluded:
+            continue
+
+        # 获取任务状态
+        status = task.status.value if hasattr(task.status, 'value') else str(task.status)
+
+        # 只计算未完成任务（未开始或进行中）
+        is_incomplete = status in ("未开始", "进行中")
+
+        # 辅助函数：添加任务到人员
+        def add_task_to_person(person: str, role: str):
+            if person not in person_tasks:
+                person_tasks[person] = {
+                    "tasks": [],
+                    "roles": {"R": 0, "A": 0, "C": 0, "I": 0},
+                    "ewl_by_role": {"R": 0.0, "A": 0.0, "C": 0.0, "I": 0.0}
+                }
+
+            # 计算该任务的 EWL 贡献
+            duration = task.duration if task.duration else 0
+            contribution = duration * ROLE_WEIGHTS[role] if is_incomplete else 0
+
+            person_tasks[person]["tasks"].append({
+                "task_no": task.task_no,
+                "task_name": task.name,
+                "milestone": task.milestone,
+                "duration": duration,
+                "progress": task.progress,
+                "status": status,
+                "role": role,
+                "contribution": round(contribution, 1)
+            })
+            person_tasks[person]["roles"][role] += 1
+
+            # 累加 EWL（只累加未完成任务）
+            if is_incomplete:
+                person_tasks[person]["ewl_by_role"][role] += contribution
+
+        # 收集负责人 (R)
+        for person in task.responsible:
+            add_task_to_person(person, "R")
+
+        # 收集批准人 (A)
+        if task.accountable:
+            add_task_to_person(task.accountable, "A")
+
+        # 收集咨询人 (C)
+        for person in task.consulted:
+            add_task_to_person(person, "C")
+
+        # 收集知会人 (I)
+        for person in task.informed:
+            add_task_to_person(person, "I")
+
+    # 获取人员部门信息
+    personnel_map = {p["name"]: p.get("department", "") for p in app_state.personnel}
+
+    # 构建结果
+    workload_data = []
+    for person_name, data in person_tasks.items():
+        tasks = data["tasks"]
+        roles = data["roles"]
+        ewl_by_role = data["ewl_by_role"]
+
+        # 计算总 EWL
+        ewl = sum(ewl_by_role.values())
+
+        # 计算状态统计
+        summary = {
+            "not_started": sum(1 for t in tasks if t["status"] == "未开始"),
+            "in_progress": sum(1 for t in tasks if t["status"] == "进行中"),
+            "completed": sum(1 for t in tasks if t["status"] == "已完成"),
+            "paused": sum(1 for t in tasks if t["status"] == "暂停"),
+        }
+
+        # 未完成任务数
+        incomplete_task_count = summary["not_started"] + summary["in_progress"]
+
+        # 计算平均进度（只针对未完成任务）
+        incomplete_tasks = [t for t in tasks if t["status"] in ("未开始", "进行中")]
+        avg_progress = sum(t["progress"] for t in incomplete_tasks) / len(incomplete_tasks) if incomplete_tasks else 0
+
+        workload_data.append({
+            "person_name": person_name,
+            "department": personnel_map.get(person_name, ""),
+            "ewl": round(ewl, 1),
+            "ewl_by_role": {k: round(v, 1) for k, v in ewl_by_role.items()},
+            "task_count": incomplete_task_count,  # 改为未完成任务数
+            "total_task_count": len(tasks),  # 总任务数
+            "tasks": tasks,
+            "roles": roles,
+            "summary": summary,
+            "avg_progress": round(avg_progress, 1)
+        })
+
+    # 按 EWL 降序排列（负荷最重的在前）
+    workload_data.sort(key=lambda x: (-x["ewl"], x["person_name"]))
+
+    # 计算总 EWL 和平均 EWL
+    total_ewl = sum(w["ewl"] for w in workload_data)
+    avg_ewl = total_ewl / len(workload_data) if workload_data else 0
+
+    return {
+        "workload_data": workload_data,
+        "total_personnel": len(workload_data),
+        "total_tasks": sum(w["task_count"] for w in workload_data),
+        "total_ewl": round(total_ewl, 1),
+        "avg_ewl": round(avg_ewl, 1)
+    }
+
+
+@app.get("/api/reports/project-dashboard")
+async def get_project_dashboard():
+    """获取项目仪表盘数据"""
+    app_state.ensure_project_loaded()
+
+    # 排除已排除的任务
+    active_tasks = [t for t in app_state.tasks if not t.excluded]
+
+    # 辅助函数：获取状态值
+    def get_status_value(task):
+        return task.status.value if hasattr(task.status, 'value') else str(task.status)
+
+    # 任务统计
+    total = len(active_tasks)
+    completed = sum(1 for t in active_tasks if get_status_value(t) == "已完成")
+    in_progress = sum(1 for t in active_tasks if get_status_value(t) == "进行中")
+    not_started = sum(1 for t in active_tasks if get_status_value(t) == "未开始")
+    paused = sum(1 for t in active_tasks if get_status_value(t) == "暂停")
+    completion_rate = (completed / total * 100) if total > 0 else 0
+
+    task_stats = {
+        "total": total,
+        "completed": completed,
+        "in_progress": in_progress,
+        "not_started": not_started,
+        "paused": paused,
+        "completion_rate": round(completion_rate, 1)
+    }
+
+    # 里程碑统计
+    milestone_stats = []
+    milestone_tasks: dict = {}
+    for task in active_tasks:
+        if task.milestone not in milestone_tasks:
+            milestone_tasks[task.milestone] = []
+        milestone_tasks[task.milestone].append(task)
+
+    # 按里程碑顺序排序
+    for milestone in app_state.milestones:
+        if milestone in milestone_tasks:
+            tasks = milestone_tasks[milestone]
+            total_tasks = len(tasks)
+            completed_tasks = sum(1 for t in tasks if get_status_value(t) == "已完成")
+            avg_progress = sum(t.progress for t in tasks) / total_tasks if total_tasks > 0 else 0
+            milestone_stats.append({
+                "milestone": milestone,
+                "total_tasks": total_tasks,
+                "completed_tasks": completed_tasks,
+                "avg_progress": round(avg_progress, 1)
+            })
+
+    # 状态分布（饼图）
+    status_distribution = [
+        {"status": "已完成", "count": completed, "percentage": round(completed / total * 100, 1) if total > 0 else 0},
+        {"status": "进行中", "count": in_progress, "percentage": round(in_progress / total * 100, 1) if total > 0 else 0},
+        {"status": "未开始", "count": not_started, "percentage": round(not_started / total * 100, 1) if total > 0 else 0},
+        {"status": "暂停", "count": paused, "percentage": round(paused / total * 100, 1) if total > 0 else 0},
+    ]
+
+    # 进度趋势（暂时返回空数组，因为没有历史数据）
+    progress_trend = []
+
+    return {
+        "task_stats": task_stats,
+        "milestone_stats": milestone_stats,
+        "status_distribution": status_distribution,
+        "progress_trend": progress_trend
+    }
+
+
 @app.post("/api/progress/batch-import")
 async def batch_import_progress(
     file: UploadFile = File(...),

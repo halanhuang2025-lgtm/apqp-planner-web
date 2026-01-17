@@ -18,6 +18,8 @@ import { PersonnelManager } from './components/PersonnelManager';
 import { BatchRaciDialog } from './components/BatchRaciDialog';
 import { ProjectDescriptionDialog } from './components/ProjectDescriptionDialog';
 import { BatchProgressImportDialog } from './components/BatchProgressImportDialog';
+import { PersonnelWorkloadDialog } from './components/PersonnelWorkloadDialog';
+import { ProjectDashboardDialog } from './components/ProjectDashboard';
 import { exportExcel, downloadBatchProgressTemplate } from './api/tasks';
 import api from './api/client';
 import type { Task } from './types/task';
@@ -71,6 +73,8 @@ function App() {
   const [showProjectDescription, setShowProjectDescription] = useState(false);  // 项目描述编辑
   const [expandDescription, setExpandDescription] = useState(true);  // 项目描述展开状态
   const [showBatchProgressImport, setShowBatchProgressImport] = useState(false);  // 批量进度导入
+  const [showPersonnelWorkload, setShowPersonnelWorkload] = useState(false);  // 人员负荷表
+  const [showDashboard, setShowDashboard] = useState(false);  // 项目仪表盘
 
   // 对话框状态
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -307,6 +311,18 @@ function App() {
             className="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm transition-colors"
           >
             人员库
+          </button>
+          <button
+            onClick={() => setShowPersonnelWorkload(true)}
+            className="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm transition-colors"
+          >
+            人员负荷
+          </button>
+          <button
+            onClick={() => setShowDashboard(true)}
+            className="px-3 py-2 bg-white/10 hover:bg-white/20 rounded-lg text-sm transition-colors"
+          >
+            项目仪表盘
           </button>
         </div>
         <button
@@ -811,6 +827,17 @@ function App() {
           // 导入成功后重新加载任务
           loadTemplate();
         }}
+      />
+
+      <PersonnelWorkloadDialog
+        isOpen={showPersonnelWorkload}
+        onClose={() => setShowPersonnelWorkload(false)}
+      />
+
+      <ProjectDashboardDialog
+        isOpen={showDashboard}
+        onClose={() => setShowDashboard(false)}
+        projectName={currentProject?.name}
       />
     </div>
   );

@@ -3,7 +3,16 @@
  */
 
 import api from './client';
-import type { Task, ScheduleRequest, ScheduleResponse, ProgressRecord, ProgressRecordRequest, BatchImportResult } from '../types/task';
+import type {
+  Task,
+  ScheduleRequest,
+  ScheduleResponse,
+  ProgressRecord,
+  ProgressRecordRequest,
+  BatchImportResult,
+  PersonnelWorkloadResponse,
+  ProjectDashboardData
+} from '../types/task';
 
 // 获取所有任务
 export const getTasks = async (): Promise<Task[]> => {
@@ -263,5 +272,19 @@ export const batchImportProgress = async (file: File, recordDate?: string): Prom
       'Content-Type': 'multipart/form-data',
     },
   });
+  return response.data;
+};
+
+// ============ 报表 API ============
+
+// 获取人员工作负荷数据
+export const getPersonnelWorkload = async (): Promise<PersonnelWorkloadResponse> => {
+  const response = await api.get('/api/reports/personnel-workload');
+  return response.data;
+};
+
+// 获取项目仪表盘数据
+export const getProjectDashboard = async (): Promise<ProjectDashboardData> => {
+  const response = await api.get('/api/reports/project-dashboard');
   return response.data;
 };
