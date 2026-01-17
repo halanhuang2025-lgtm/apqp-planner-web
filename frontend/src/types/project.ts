@@ -8,6 +8,10 @@ export type ProjectStatus = 'active' | 'archived' | 'template';
 // 排期模式
 export type ScheduleMode = 'forward' | 'backward';
 
+// 项目分类选项
+export const PROJECT_TYPES = ['新产品开发', '特殊定制', '工程项目非标机'] as const;
+export type ProjectType = typeof PROJECT_TYPES[number] | '';
+
 // 项目数据
 export interface Project {
   id: string;
@@ -17,6 +21,8 @@ export interface Project {
   updated_at: string;
   status: ProjectStatus;
   // 项目详细属性
+  project_no: string;        // 项目编号，如 2026001
+  project_type: ProjectType; // 项目分类：新产品开发、特殊定制、工程项目非标机
   machine_no: string;        // 整机编号
   customer: string;          // 客户名称
   model: string;             // 机型
@@ -39,6 +45,8 @@ export interface CreateProjectRequest {
   description?: string;
   template_id?: string;
   // 项目详细属性
+  project_no?: string;
+  project_type?: string;
   machine_no?: string;
   customer?: string;
   model?: string;
@@ -53,6 +61,8 @@ export interface UpdateProjectRequest {
   description?: string;
   status?: ProjectStatus;
   // 项目详细属性
+  project_no?: string;
+  project_type?: string;
   machine_no?: string;
   customer?: string;
   model?: string;

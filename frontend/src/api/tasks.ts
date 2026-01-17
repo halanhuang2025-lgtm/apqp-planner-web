@@ -3,7 +3,7 @@
  */
 
 import api from './client';
-import type { Task, ScheduleRequest, ScheduleResponse, ProgressRecord, ProgressRecordRequest } from '../types/task';
+import type { Task, ScheduleRequest, ScheduleResponse, ProgressRecord, ProgressRecordRequest, BatchImportResult } from '../types/task';
 
 // 获取所有任务
 export const getTasks = async (): Promise<Task[]> => {
@@ -120,6 +120,12 @@ export const getProgressHistory = async (taskIndex: number): Promise<ProgressRec
   return response.data.records || [];
 };
 
+// 删除进度记录
+export const deleteProgressRecord = async (taskIndex: number, recordId: string): Promise<{ success: boolean }> => {
+  const response = await api.delete(`/api/progress/record/${taskIndex}/${encodeURIComponent(recordId)}`);
+  return response.data;
+};
+
 // ============ 里程碑管理 API ============
 
 // 获取里程碑列表
@@ -231,4 +237,31 @@ export const addDepartment = async (name: string): Promise<string[]> => {
 export const deleteDepartment = async (name: string): Promise<string[]> => {
   const response = await api.delete(`/api/departments/${encodeURIComponent(name)}`);
   return response.data.departments;
+};
+
+// ============ 批量进度管理 API ============
+
+// 下载批量进度导入模板
+export const downloadBatchProgressTemplate = async (recordDate?: string): Promise<Blob> => {
+  const params = recordDate ? { record_date: recordDate } : {};
+  const response = await api.get('/api/progress/batch-template', {
+    params,
+    responseType: 'blob'
+  });
+  return response.data;
+};
+
+// 批量导入进度
+export const batchImportProgress = async (file: File, recordDate?: string): Promise<BatchImportResult> => {
+  const formData = new FormData();
+  formData.append('file', file);
+
+  const params = recordDate ? { record_date: recordDate } : {};
+  const response = await api.post('/api/progress/batch-import', formData, {
+    params,
+    headers: {
+      'Content-Type': 'multipart/form-data',
+    },
+  });
+  return response.data;
 };

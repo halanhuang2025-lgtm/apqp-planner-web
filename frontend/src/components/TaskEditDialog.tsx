@@ -6,7 +6,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 import type { Task, ProgressRecord } from '../types/task';
-import { recordProgress, getProgressHistory, getPersonnel } from '../api/tasks';
+import { recordProgress, getProgressHistory, getPersonnel, deleteProgressRecord } from '../api/tasks';
 import type { Person } from '../api/tasks';
 import { useTaskStore } from '../stores/taskStore';
 
@@ -166,6 +166,23 @@ export function TaskEditDialog({ task, isOpen, onClose, onSave, mode }: TaskEdit
       }
     } catch (error) {
       console.error('加载历史记录失败:', error);
+    }
+  };
+
+  const handleDeleteRecord = async (recordId: string) => {
+    if (!task) return;
+
+    if (!confirm('确定要删除这条记录吗？')) {
+      return;
+    }
+
+    try {
+      await deleteProgressRecord(task.index, recordId);
+      // 重新加载历史记录
+      await loadHistoryAndTodayRecord(task.index);
+    } catch (error) {
+      console.error('删除记录失败:', error);
+      alert(`删除失败：${getErrorMessage(error)}`);
     }
   };
 
@@ -501,7 +518,21 @@ export function TaskEditDialog({ task, isOpen, onClose, onSave, mode }: TaskEdit
             {/* 日期设置区域 - 仅编辑模式显示 */}
             {mode === 'edit' && (
               <div className="mt-6 pt-4 border-t border-gray-200">
-                <h3 className="text-sm font-bold text-gray-900 mb-3">日期设置</h3>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="text-sm font-bold text-gray-900">日期设置</h3>
+                  {(formData.actual_start || formData.actual_end) && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleChange('actual_start', null);
+                        handleChange('actual_end', null);
+                      }}
+                      className="text-xs text-red-500 hover:text-red-700"
+                    >
+                      清空实际日期
+                    </button>
+                  )}
+                </div>
                 <div className="grid grid-cols-2 gap-4">
                   {/* 计划开始日期 */}
                   <div>
@@ -690,6 +721,7 @@ export function TaskEditDialog({ task, isOpen, onClose, onSave, mode }: TaskEdit
                               <th className="px-2 py-1 text-left">状态</th>
                               <th className="px-2 py-1 text-left">备注</th>
                               <th className="px-2 py-1 text-left">问题</th>
+                              <th className="px-2 py-1 text-center w-12">操作</th>
                             </tr>
                           </thead>
                           <tbody>
@@ -703,6 +735,16 @@ export function TaskEditDialog({ task, isOpen, onClose, onSave, mode }: TaskEdit
                                 </td>
                                 <td className="px-2 py-1 text-red-600 max-w-[120px] truncate">
                                   {record.issues || '-'}
+                                </td>
+                                <td className="px-2 py-1 text-center">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleDeleteRecord(record.record_id)}
+                                    className="text-red-500 hover:text-red-700"
+                                    title="删除此记录"
+                                  >
+                                    x
+                                  </button>
                                 </td>
                               </tr>
                             ))}

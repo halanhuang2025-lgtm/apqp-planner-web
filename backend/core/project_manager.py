@@ -25,6 +25,8 @@ class Project:
     status: str = "active"  # active / archived / template
 
     # 项目详细属性
+    project_no: str = ""        # 项目编号，如 2026001
+    project_type: str = ""      # 项目分类：新产品开发、特殊定制、工程项目非标机
     machine_no: str = ""        # 整机编号，如 W12661-297-T2
     customer: str = ""          # 客户名称
     model: str = ""             # 机型，如 HVR-320A(Q)-4
@@ -52,6 +54,8 @@ class Project:
             "updated_at": self.updated_at.isoformat() if isinstance(self.updated_at, datetime) else self.updated_at,
             "status": self.status,
             # 项目详细属性
+            "project_no": self.project_no,
+            "project_type": self.project_type,
             "machine_no": self.machine_no,
             "customer": self.customer,
             "model": self.model,
@@ -91,6 +95,8 @@ class Project:
             updated_at=updated_at,
             status=data.get("status", "active"),
             # 项目详细属性
+            project_no=data.get("project_no", ""),
+            project_type=data.get("project_type", ""),
             machine_no=data.get("machine_no", ""),
             customer=data.get("customer", ""),
             model=data.get("model", ""),
@@ -357,6 +363,40 @@ class ProjectManager:
         self._save_index()
 
         return template
+
+    def get_next_project_no(self, exclude: Optional[List[str]] = None) -> str:
+        """生成下一个项目编号，格式：YYYY + 3位序号
+
+        Args:
+            exclude: 需要排除的编号列表（用于避免并发编辑时生成重复编号）
+        """
+        current_year = datetime.now().year
+        year_prefix = str(current_year)
+        exclude_set = set(exclude or [])
+
+        # 查找该年度最大序号（包括已保存的项目和排除列表中的编号）
+        max_seq = 0
+
+        # 检查已保存的项目
+        for project in self.projects.values():
+            if project.project_no.startswith(year_prefix):
+                try:
+                    seq = int(project.project_no[4:])  # 提取序号部分
+                    max_seq = max(max_seq, seq)
+                except ValueError:
+                    continue
+
+        # 检查排除列表中的编号
+        for project_no in exclude_set:
+            if project_no.startswith(year_prefix):
+                try:
+                    seq = int(project_no[4:])
+                    max_seq = max(max_seq, seq)
+                except ValueError:
+                    continue
+
+        # 返回下一个序号
+        return f"{year_prefix}{max_seq + 1:03d}"
 
     def get_comparison_data(self, project_ids: List[str]) -> List[dict]:
         """获取项目对比数据"""

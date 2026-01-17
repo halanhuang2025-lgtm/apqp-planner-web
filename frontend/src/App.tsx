@@ -17,7 +17,8 @@ import { CategoryManager } from './components/CategoryManager';
 import { PersonnelManager } from './components/PersonnelManager';
 import { BatchRaciDialog } from './components/BatchRaciDialog';
 import { ProjectDescriptionDialog } from './components/ProjectDescriptionDialog';
-import { exportExcel } from './api/tasks';
+import { BatchProgressImportDialog } from './components/BatchProgressImportDialog';
+import { exportExcel, downloadBatchProgressTemplate } from './api/tasks';
 import api from './api/client';
 import type { Task } from './types/task';
 
@@ -69,6 +70,7 @@ function App() {
   const [showBatchRaci, setShowBatchRaci] = useState(false);  // 批量RACI设置
   const [showProjectDescription, setShowProjectDescription] = useState(false);  // 项目描述编辑
   const [expandDescription, setExpandDescription] = useState(true);  // 项目描述展开状态
+  const [showBatchProgressImport, setShowBatchProgressImport] = useState(false);  // 批量进度导入
 
   // 对话框状态
   const [dialogOpen, setDialogOpen] = useState(false);
@@ -158,6 +160,17 @@ function App() {
     return map[status] || '';
   };
 
+  // 获取状态对应的行背景颜色类
+  const getStatusRowClass = (status: string) => {
+    const map: Record<string, string> = {
+      '未开始': 'bg-gray-100',
+      '进行中': 'bg-blue-100',
+      '已完成': 'bg-green-100',
+      '暂停': 'bg-orange-100',
+    };
+    return map[status] || '';
+  };
+
   // 获取选中的任务
   const getSelectedTask = () => {
     if (selectedIndices.length === 1) {
@@ -239,6 +252,25 @@ function App() {
       alert(`模板"${templateName}"保存成功！`);
     } else {
       alert('保存模板失败');
+    }
+  };
+
+  // 下载进度模板
+  const handleDownloadProgressTemplate = async () => {
+    try {
+      const today = new Date().toISOString().split('T')[0];
+      const blob = await downloadBatchProgressTemplate(today);
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `进度导入模板_${today.replace(/-/g, '')}.xlsx`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(url);
+    } catch (error) {
+      console.error('下载模板失败:', error);
+      alert('下载进度模板失败，请重试');
     }
   };
 
@@ -577,6 +609,25 @@ function App() {
               >
                 生成 Excel
               </button>
+
+              <div className="w-px h-8 bg-gray-300 mx-2" />
+
+              <button
+                className="btn btn-secondary text-sm py-1"
+                onClick={handleDownloadProgressTemplate}
+                disabled={isLoading}
+                title="下载包含所有活跃项目任务的进度模板"
+              >
+                下载进度模板
+              </button>
+              <button
+                className="btn btn-primary text-sm py-1"
+                onClick={() => setShowBatchProgressImport(true)}
+                disabled={isLoading}
+                title="批量导入每日进度"
+              >
+                导入每日进度
+              </button>
             </div>
           </div>
 
@@ -609,7 +660,7 @@ function App() {
                       className={`
                         cursor-pointer transition-colors
                         ${selectedIndices.includes(task.index) ? 'selected' : ''}
-                        ${task.excluded ? 'excluded' : ''}
+                        ${task.excluded ? 'excluded' : getStatusRowClass(task.status)}
                       `}
                       onClick={(e) => toggleSelect(task.index, e.metaKey || e.ctrlKey)}
                       onDoubleClick={() => handleEditTask(task)}
@@ -750,6 +801,15 @@ function App() {
           if (currentProject) {
             await updateProject(currentProject.id, updates);
           }
+        }}
+      />
+
+      <BatchProgressImportDialog
+        isOpen={showBatchProgressImport}
+        onClose={() => setShowBatchProgressImport(false)}
+        onSuccess={() => {
+          // 导入成功后重新加载任务
+          loadTemplate();
         }}
       />
     </div>

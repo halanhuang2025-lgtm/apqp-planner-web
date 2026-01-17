@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import List, Optional
 from datetime import datetime
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, UploadFile, File
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -26,7 +26,8 @@ from core import (
     Task, TaskStatus, Scheduler,
     ConfigManager, load_template_tasks,
     ProgressManager, ExcelGenerator,
-    Project, ProjectManager
+    Project, ProjectManager,
+    BatchProgressTemplateGenerator, BatchProgressImporter
 )
 
 # ============ 应用初始化 ============
@@ -576,6 +577,8 @@ class ProjectUpdateModel(BaseModel):
     description: Optional[str] = None
     status: Optional[str] = None
     # 项目详细属性
+    project_no: Optional[str] = None
+    project_type: Optional[str] = None
     machine_no: Optional[str] = None
     customer: Optional[str] = None
     model: Optional[str] = None
@@ -612,6 +615,17 @@ async def list_projects(status: Optional[str] = None):
         "projects": [p.to_dict() for p in projects],
         "default_project_id": app_state.current_project.id if app_state.current_project else None
     }
+
+
+@app.get("/api/projects/next-project-no")
+async def get_next_project_no(exclude: Optional[str] = None):
+    """获取下一个建议的项目编号
+
+    Args:
+        exclude: 逗号分隔的需要排除的编号列表（避免并发编辑时重复）
+    """
+    exclude_list = exclude.split(',') if exclude else None
+    return {"project_no": app_state.project_manager.get_next_project_no(exclude_list)}
 
 
 @app.post("/api/projects")
@@ -1286,6 +1300,161 @@ async def get_progress_history(task_index: int):
             for r in history
         ]
     }
+
+
+@app.delete("/api/progress/record/{task_index}/{record_id}")
+async def delete_progress_record(task_index: int, record_id: str):
+    """删除进度记录"""
+    if task_index < 0 or task_index >= len(app_state.tasks):
+        raise HTTPException(status_code=404, detail="任务不存在")
+
+    task = app_state.tasks[task_index]
+
+    # 删除记录
+    if not app_state.progress_manager.delete_record(record_id):
+        raise HTTPException(status_code=404, detail="记录不存在")
+
+    # 从任务的 progress_history 中移除
+    if record_id in task.progress_history:
+        task.progress_history.remove(record_id)
+
+    # 保存数据
+    app_state.project_manager.save_project_data(
+        app_state.current_project.id,
+        app_state.tasks,
+        app_state.progress_manager,
+        app_state.milestones
+    )
+
+    return {"success": True, "message": "记录已删除"}
+
+
+# ============ 批量进度管理 API ============
+
+@app.get("/api/progress/batch-template")
+async def download_batch_progress_template(record_date: Optional[str] = None):
+    """下载批量进度导入模板"""
+    import tempfile
+    import os
+
+    # 解析记录日期
+    date_obj = None
+    if record_date:
+        try:
+            date_obj = datetime.strptime(record_date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="日期格式错误，应为 YYYY-MM-DD")
+
+    # 生成模板
+    generator = BatchProgressTemplateGenerator()
+    date_str = (date_obj or datetime.now()).strftime("%Y%m%d")
+    filename = f"进度导入模板_{date_str}.xlsx"
+
+    temp_dir = tempfile.gettempdir()
+    output_path = os.path.join(temp_dir, filename)
+
+    generator.generate(
+        project_manager=app_state.project_manager,
+        output_path=output_path,
+        record_date=date_obj
+    )
+
+    return FileResponse(
+        path=output_path,
+        filename=filename,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+    )
+
+
+@app.post("/api/progress/batch-import")
+async def batch_import_progress(
+    file: UploadFile = File(...),
+    record_date: Optional[str] = None
+):
+    """批量导入进度数据"""
+    import tempfile
+    import os
+
+    # 验证文件类型
+    if not file.filename.endswith(('.xlsx', '.xls')):
+        raise HTTPException(status_code=400, detail="请上传 Excel 文件 (.xlsx 或 .xls)")
+
+    # 解析记录日期
+    date_obj = None
+    if record_date:
+        try:
+            date_obj = datetime.strptime(record_date, "%Y-%m-%d")
+        except ValueError:
+            raise HTTPException(status_code=400, detail="日期格式错误，应为 YYYY-MM-DD")
+
+    # 保存上传的文件到临时目录
+    temp_dir = tempfile.gettempdir()
+    temp_path = os.path.join(temp_dir, f"upload_{datetime.now().strftime('%Y%m%d%H%M%S')}.xlsx")
+
+    try:
+        contents = await file.read()
+        with open(temp_path, 'wb') as f:
+            f.write(contents)
+
+        # 解析模板
+        importer = BatchProgressImporter()
+        progress_data, parse_errors = importer.parse_template(temp_path)
+
+        if parse_errors and not progress_data:
+            return {
+                "success": False,
+                "message": "解析失败",
+                "errors": parse_errors,
+                "projects_updated": 0,
+                "imported_count": 0,
+                "skipped_count": 0,
+                "details": []
+            }
+
+        if not progress_data:
+            return {
+                "success": True,
+                "message": "没有需要导入的进度数据（今日增加列未填写）",
+                "errors": parse_errors,
+                "projects_updated": 0,
+                "imported_count": 0,
+                "skipped_count": 0,
+                "details": []
+            }
+
+        # 导入进度
+        result = importer.import_progress(
+            project_manager=app_state.project_manager,
+            progress_data=progress_data,
+            record_date=date_obj
+        )
+
+        # 合并解析错误
+        result["errors"] = parse_errors + result.get("errors", [])
+        result["message"] = f"成功导入 {result['imported_count']} 条进度记录，更新了 {result['projects_updated']} 个项目"
+
+        # 重新加载当前项目的数据（如果当前项目被更新）
+        if app_state.current_project:
+            current_project_updated = any(
+                d["project_name"] == app_state.current_project.name and d["imported"] > 0
+                for d in result.get("details", [])
+            )
+            if current_project_updated:
+                # 直接重新加载数据，不调用 switch_to_project（避免覆盖刚导入的数据）
+                tasks, progress_manager, milestones = app_state.project_manager.load_project_data(
+                    app_state.current_project.id
+                )
+                app_state.tasks = tasks
+                app_state.progress_manager = progress_manager
+                if milestones:
+                    app_state.milestones = milestones
+
+        return result
+
+    finally:
+        # 清理临时文件
+        if os.path.exists(temp_path):
+            os.remove(temp_path)
 
 
 # ============ 退出控制 ============

@@ -81,3 +81,10 @@ export async function compareProjects(data: CompareProjectsRequest): Promise<Pro
   const response = await api.post<{ comparison: ProjectComparisonData[] }>('/api/projects/compare', data);
   return response.data.comparison;
 }
+
+// 获取下一个项目编号
+export async function getNextProjectNo(exclude?: string[]): Promise<string> {
+  const params = exclude?.length ? { exclude: exclude.join(',') } : {};
+  const response = await api.get<{ project_no: string }>('/api/projects/next-project-no', { params });
+  return response.data.project_no;
+}

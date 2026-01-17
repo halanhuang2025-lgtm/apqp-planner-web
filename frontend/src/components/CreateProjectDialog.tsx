@@ -4,7 +4,9 @@
 
 import { useState, useEffect } from 'react';
 import { useProjectStore } from '../stores/projectStore';
+import { getNextProjectNo } from '../api/projects';
 import type { ProjectTemplate } from '../types/project';
+import { PROJECT_TYPES } from '../types/project';
 
 interface CreateProjectDialogProps {
   isOpen: boolean;
@@ -19,6 +21,8 @@ export function CreateProjectDialog({ isOpen, onClose }: CreateProjectDialogProp
   const [selectedTemplate, setSelectedTemplate] = useState<string>('builtin_apqp');
 
   // 新字段
+  const [projectNo, setProjectNo] = useState('');
+  const [projectType, setProjectType] = useState('');
   const [machineNo, setMachineNo] = useState('');
   const [customer, setCustomer] = useState('');
   const [model, setModel] = useState('');
@@ -34,18 +38,24 @@ export function CreateProjectDialog({ isOpen, onClose }: CreateProjectDialogProp
     }
   }, [isOpen, fetchTemplates, fetchCategories]);
 
-  // 重置表单
+  // 重置表单并自动加载项目编号
   useEffect(() => {
     if (isOpen) {
       setName('');
       setDescription('');
       setSelectedTemplate('builtin_apqp');
+      setProjectType('');
       setMachineNo('');
       setCustomer('');
       setModel('');
       setCategory('');
       setSpecifications('');
       setCustomRequirements('');
+
+      // 自动加载下一个项目编号
+      getNextProjectNo()
+        .then((nextNo) => setProjectNo(nextNo))
+        .catch(() => setProjectNo(''));
     }
   }, [isOpen]);
 
@@ -60,6 +70,8 @@ export function CreateProjectDialog({ isOpen, onClose }: CreateProjectDialogProp
       name: name.trim(),
       description: description.trim(),
       template_id: selectedTemplate || undefined,
+      project_no: projectNo.trim(),
+      project_type: projectType,
       machine_no: machineNo.trim(),
       customer: customer.trim(),
       model: model.trim(),
@@ -116,6 +128,40 @@ export function CreateProjectDialog({ isOpen, onClose }: CreateProjectDialogProp
               autoFocus
               required
             />
+          </div>
+
+          {/* 项目编号和分类 - 两列布局 */}
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            {/* 项目编号 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                项目编号
+              </label>
+              <input
+                type="text"
+                className="input"
+                value={projectNo}
+                onChange={(e) => setProjectNo(e.target.value)}
+                placeholder="如：2026001"
+              />
+            </div>
+
+            {/* 项目分类 */}
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                项目分类
+              </label>
+              <select
+                className="input"
+                value={projectType}
+                onChange={(e) => setProjectType(e.target.value)}
+              >
+                <option value="">选择分类</option>
+                {PROJECT_TYPES.map((type) => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
           {/* 项目详细属性 - 两列布局 */}

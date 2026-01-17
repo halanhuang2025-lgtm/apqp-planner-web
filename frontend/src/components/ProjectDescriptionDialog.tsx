@@ -3,7 +3,9 @@
  */
 
 import { useState, useEffect } from 'react';
-import type { Project } from '../types/project';
+import { getNextProjectNo } from '../api/projects';
+import type { Project, ProjectType } from '../types/project';
+import { PROJECT_TYPES } from '../types/project';
 
 interface ProjectDescriptionDialogProps {
   isOpen: boolean;
@@ -21,6 +23,8 @@ export function ProjectDescriptionDialog({
   const [specifications, setSpecifications] = useState('');
   const [customRequirements, setCustomRequirements] = useState('');
   const [description, setDescription] = useState('');
+  const [projectNo, setProjectNo] = useState('');
+  const [projectType, setProjectType] = useState('');
   const [customer, setCustomer] = useState('');
   const [machineNo, setMachineNo] = useState('');
   const [model, setModel] = useState('');
@@ -31,6 +35,8 @@ export function ProjectDescriptionDialog({
       setSpecifications(project.specifications || '');
       setCustomRequirements(project.custom_requirements || '');
       setDescription(project.description || '');
+      setProjectNo(project.project_no || '');
+      setProjectType(project.project_type || '');
       setCustomer(project.customer || '');
       setMachineNo(project.machine_no || '');
       setModel(project.model || '');
@@ -46,6 +52,8 @@ export function ProjectDescriptionDialog({
         specifications,
         custom_requirements: customRequirements,
         description,
+        project_no: projectNo,
+        project_type: projectType as ProjectType,
         customer,
         machine_no: machineNo,
         model,
@@ -75,6 +83,54 @@ export function ProjectDescriptionDialog({
         </div>
 
         <div className="p-4 space-y-4 overflow-y-auto flex-1">
+          {/* 项目编号和分类 */}
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                项目编号
+              </label>
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={projectNo}
+                  onChange={(e) => setProjectNo(e.target.value)}
+                  className="flex-1 px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-primary"
+                  placeholder="如：2026001"
+                />
+                <button
+                  type="button"
+                  onClick={async () => {
+                    try {
+                      const nextNo = await getNextProjectNo();
+                      setProjectNo(nextNo);
+                    } catch (error) {
+                      console.error('获取项目编号失败:', error);
+                    }
+                  }}
+                  className="px-3 py-2 text-sm bg-gray-100 text-gray-700 rounded hover:bg-gray-200 whitespace-nowrap"
+                  title="根据已有项目自动生成下一个编号"
+                >
+                  自动生成
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                项目分类
+              </label>
+              <select
+                value={projectType}
+                onChange={(e) => setProjectType(e.target.value)}
+                className="w-full px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-primary"
+              >
+                <option value="">选择分类</option>
+                {PROJECT_TYPES.map((type) => (
+                  <option key={type} value={type}>{type}</option>
+                ))}
+              </select>
+            </div>
+          </div>
+
           {/* 基本信息 */}
           <div className="grid grid-cols-2 gap-4">
             <div>

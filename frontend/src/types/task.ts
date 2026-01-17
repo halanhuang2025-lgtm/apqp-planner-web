@@ -45,6 +45,7 @@ export interface ScheduleResponse {
 
 // 进度记录
 export interface ProgressRecord {
+  record_id: string;  // 记录ID，用于删除
   task_index: number;
   progress: number;
   increment: number;  // 当日增量
@@ -62,4 +63,21 @@ export interface ProgressRecordRequest {
   note?: string;
   issues?: string;
   record_date?: string;
+}
+
+// 批量进度导入结果
+export interface BatchImportResult {
+  success: boolean;
+  message: string;
+  projects_updated: number;
+  imported_count: number;
+  skipped_count: number;
+  errors: string[];
+  details: BatchImportDetail[];
+}
+
+export interface BatchImportDetail {
+  project_name: string;
+  imported: number;
+  skipped: number;
 }

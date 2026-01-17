@@ -2,9 +2,11 @@
  * 项目列表弹窗组件
  */
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useProjectStore } from '../stores/projectStore';
-import type { Project, ProjectStatus } from '../types/project';
+import { getNextProjectNo } from '../api/projects';
+import type { Project, ProjectStatus, ProjectType } from '../types/project';
+import { PROJECT_TYPES } from '../types/project';
 
 interface ProjectListModalProps {
   isOpen: boolean;
@@ -25,6 +27,7 @@ export function ProjectListModal({ isOpen, onClose, onCreateProject, onCompare }
     duplicateProject,
     saveAsTemplate,
     updateProject,
+    fetchCategories,
     isLoading,
   } = useProjectStore();
 
@@ -37,12 +40,24 @@ export function ProjectListModal({ isOpen, onClose, onCreateProject, onCompare }
   const [inputName, setInputName] = useState('');
   const [inputDescription, setInputDescription] = useState('');
   // 编辑项目的扩展字段
+  const [inputProjectNo, setInputProjectNo] = useState('');
+  const [inputProjectType, setInputProjectType] = useState('');
+  const [generatedProjectNos, setGeneratedProjectNos] = useState<string[]>([]); // 追踪已生成的编号
   const [inputMachineNo, setInputMachineNo] = useState('');
   const [inputCustomer, setInputCustomer] = useState('');
   const [inputModel, setInputModel] = useState('');
   const [inputCategory, setInputCategory] = useState('');
   const [inputSpecifications, setInputSpecifications] = useState('');
   const [inputCustomRequirements, setInputCustomRequirements] = useState('');
+
+  // 对话框打开时加载分类数据
+  useEffect(() => {
+    if (isOpen) {
+      fetchCategories();
+    } else {
+      setGeneratedProjectNos([]);
+    }
+  }, [isOpen, fetchCategories]);
 
   if (!isOpen) return null;
 
@@ -86,6 +101,8 @@ export function ProjectListModal({ isOpen, onClose, onCreateProject, onCompare }
     setEditingProject(project.id);
     setInputName(project.name);
     setInputDescription(project.description || '');
+    setInputProjectNo(project.project_no || '');
+    setInputProjectType(project.project_type || '');
     setInputMachineNo(project.machine_no || '');
     setInputCustomer(project.customer || '');
     setInputModel(project.model || '');
@@ -100,6 +117,8 @@ export function ProjectListModal({ isOpen, onClose, onCreateProject, onCompare }
     await updateProject(projectId, {
       name: inputName.trim(),
       description: inputDescription.trim(),
+      project_no: inputProjectNo.trim(),
+      project_type: inputProjectType as ProjectType,
       machine_no: inputMachineNo.trim(),
       customer: inputCustomer.trim(),
       model: inputModel.trim(),
@@ -115,6 +134,8 @@ export function ProjectListModal({ isOpen, onClose, onCreateProject, onCompare }
     setEditingProject(null);
     setInputName('');
     setInputDescription('');
+    setInputProjectNo('');
+    setInputProjectType('');
     setInputMachineNo('');
     setInputCustomer('');
     setInputModel('');
@@ -277,16 +298,59 @@ export function ProjectListModal({ isOpen, onClose, onCreateProject, onCompare }
                   {editingProject === project.id ? (
                     /* 编辑模式 */
                     <div className="space-y-3">
-                      {/* 第一行：项目名称 */}
-                      <div>
-                        <label className="block text-xs font-medium text-gray-500 mb-1">项目名称 *</label>
-                        <input
-                          type="text"
-                          className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary/50"
-                          value={inputName}
-                          onChange={(e) => setInputName(e.target.value)}
-                          autoFocus
-                        />
+                      {/* 第一行：项目名称、项目编号、项目分类 */}
+                      <div className="grid grid-cols-3 gap-3">
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">项目名称 *</label>
+                          <input
+                            type="text"
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary/50"
+                            value={inputName}
+                            onChange={(e) => setInputName(e.target.value)}
+                            autoFocus
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">项目编号</label>
+                          <div className="flex gap-2">
+                            <input
+                              type="text"
+                              className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary/50"
+                              value={inputProjectNo}
+                              onChange={(e) => setInputProjectNo(e.target.value)}
+                              placeholder="如：2026001"
+                            />
+                            <button
+                              type="button"
+                              onClick={async () => {
+                                try {
+                                  const nextNo = await getNextProjectNo(generatedProjectNos);
+                                  setInputProjectNo(nextNo);
+                                  setGeneratedProjectNos(prev => [...prev, nextNo]);
+                                } catch (error) {
+                                  console.error('获取项目编号失败:', error);
+                                }
+                              }}
+                              className="px-2 py-1 text-xs bg-gray-100 text-gray-600 rounded hover:bg-gray-200 whitespace-nowrap"
+                              title="自动生成下一个项目编号"
+                            >
+                              自动
+                            </button>
+                          </div>
+                        </div>
+                        <div>
+                          <label className="block text-xs font-medium text-gray-500 mb-1">项目分类</label>
+                          <select
+                            className="w-full px-3 py-2 text-sm border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-primary/50 bg-white"
+                            value={inputProjectType}
+                            onChange={(e) => setInputProjectType(e.target.value)}
+                          >
+                            <option value="">选择分类</option>
+                            {PROJECT_TYPES.map((type) => (
+                              <option key={type} value={type}>{type}</option>
+                            ))}
+                          </select>
+                        </div>
                       </div>
                       {/* 第二行：整机编号、客户、机型、分类 */}
                       <div className="grid grid-cols-4 gap-3">
