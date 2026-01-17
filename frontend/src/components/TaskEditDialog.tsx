@@ -19,8 +19,8 @@ interface TaskEditDialogProps {
 }
 
 export function TaskEditDialog({ task, isOpen, onClose, onSave, mode }: TaskEditDialogProps) {
-  // 获取里程碑列表
-  const { milestones, fetchMilestones } = useTaskStore();
+  // 获取里程碑列表和任务列表
+  const { milestones, fetchMilestones, tasks } = useTaskStore();
 
   const [formData, setFormData] = useState<Omit<Task, 'index'>>({
     milestone: '',
@@ -279,6 +279,60 @@ export function TaskEditDialog({ task, isOpen, onClose, onSave, mode }: TaskEdit
     });
   };
 
+  // 自动生成任务编号
+  const generateTaskNo = () => {
+    if (!formData.milestone) {
+      alert('请先选择里程碑');
+      return;
+    }
+
+    // 获取当前里程碑在里程碑列表中的索引（从1开始）
+    const milestoneIndex = milestones.indexOf(formData.milestone) + 1;
+    if (milestoneIndex === 0) return;
+
+    // 获取该里程碑下的所有任务编号
+    const milestoneTasks = tasks.filter(t => t.milestone === formData.milestone);
+    const taskNos = milestoneTasks.map(t => t.task_no);
+
+    // 找出最大的子编号
+    let maxSubNo = 0;
+    const prefix = `${milestoneIndex}.`;
+    taskNos.forEach(no => {
+      if (no.startsWith(prefix)) {
+        const subNo = parseInt(no.substring(prefix.length));
+        if (!isNaN(subNo) && subNo > maxSubNo) {
+          maxSubNo = subNo;
+        }
+      }
+    });
+
+    // 生成下一个编号
+    const newTaskNo = `${milestoneIndex}.${maxSubNo + 1}`;
+    handleChange('task_no', newTaskNo);
+  };
+
+  // 获取可选的前置任务列表（排除当前任务）
+  const availablePredecessors = tasks.filter(t => {
+    // 编辑模式下排除当前任务
+    if (mode === 'edit' && task && t.index === task.index) {
+      return false;
+    }
+    return true;
+  });
+
+  // 解析当前前置任务字符串为数组
+  const selectedPredecessors = formData.predecessor
+    ? formData.predecessor.split(',').map(s => s.trim()).filter(Boolean)
+    : [];
+
+  // 切换前置任务选择
+  const togglePredecessor = (taskNo: string) => {
+    const newSelected = selectedPredecessors.includes(taskNo)
+      ? selectedPredecessors.filter(n => n !== taskNo)
+      : [...selectedPredecessors, taskNo];
+    handleChange('predecessor', newSelected.join(','));
+  };
+
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-2xl mx-4 max-h-[90vh] overflow-hidden flex flex-col">
@@ -322,14 +376,24 @@ export function TaskEditDialog({ task, isOpen, onClose, onSave, mode }: TaskEdit
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   任务编号
                 </label>
-                <input
-                  type="text"
-                  className="input"
-                  value={formData.task_no}
-                  onChange={(e) => handleChange('task_no', e.target.value)}
-                  placeholder="如: 1.1"
-                  required
-                />
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    className="input flex-1"
+                    value={formData.task_no}
+                    onChange={(e) => handleChange('task_no', e.target.value)}
+                    placeholder="如: 1.1"
+                    required
+                  />
+                  <button
+                    type="button"
+                    onClick={generateTaskNo}
+                    className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded border"
+                    title="自动生成编号"
+                  >
+                    自动
+                  </button>
+                </div>
               </div>
 
               {/* 任务名称 - 占满一行 */}
@@ -365,15 +429,26 @@ export function TaskEditDialog({ task, isOpen, onClose, onSave, mode }: TaskEdit
               {/* 前置任务 */}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  前置任务
+                  前置任务 {selectedPredecessors.length > 0 && `(${selectedPredecessors.length})`}
                 </label>
-                <input
-                  type="text"
-                  className="input"
-                  value={formData.predecessor}
-                  onChange={(e) => handleChange('predecessor', e.target.value)}
-                  placeholder="如: 1.1 或 1.1,1.2"
-                />
+                <div className="border rounded-lg p-2 max-h-32 overflow-y-auto bg-gray-50">
+                  {availablePredecessors.length === 0 ? (
+                    <span className="text-gray-400 text-sm">暂无可选任务</span>
+                  ) : (
+                    availablePredecessors.map((t) => (
+                      <label key={t.index} className="flex items-center text-sm py-1 hover:bg-gray-100 px-1 rounded cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={selectedPredecessors.includes(t.task_no)}
+                          onChange={() => togglePredecessor(t.task_no)}
+                          className="mr-2"
+                        />
+                        <span className="font-medium text-gray-700">{t.task_no}</span>
+                        <span className="ml-2 text-gray-500 truncate">{t.name}</span>
+                      </label>
+                    ))
+                  )}
+                </div>
               </div>
 
               {/* 排除任务 */}
