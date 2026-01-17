@@ -380,6 +380,15 @@ async def delete_task(index: int):
     return {"message": f"已删除任务: {deleted.name}"}
 
 
+@app.delete("/api/tasks")
+async def clear_all_tasks():
+    """清空所有任务"""
+    app_state.ensure_project_loaded()
+    count = len(app_state.tasks)
+    app_state.tasks.clear()
+    return {"message": f"已清空 {count} 个任务"}
+
+
 @app.post("/api/tasks/reorder")
 async def reorder_task(index: int, direction: str):
     """上移/下移任务"""
@@ -1400,12 +1409,16 @@ async def get_personnel_workload():
                 person_tasks[person] = {
                     "tasks": [],
                     "roles": {"R": 0, "A": 0, "C": 0, "I": 0},
-                    "ewl_by_role": {"R": 0.0, "A": 0.0, "C": 0.0, "I": 0.0}
+                    "ewl_by_role": {"R": 0.0, "A": 0.0, "C": 0.0, "I": 0.0},
+                    "latest_end_date": None  # 记录最晚结束日期
                 }
 
             # 计算该任务的 EWL 贡献
             duration = task.duration if task.duration else 0
             contribution = duration * ROLE_WEIGHTS[role] if is_incomplete else 0
+
+            # 获取任务结束日期
+            end_date_str = task.end_date.strftime("%Y-%m-%d") if task.end_date else None
 
             person_tasks[person]["tasks"].append({
                 "task_no": task.task_no,
@@ -1415,13 +1428,19 @@ async def get_personnel_workload():
                 "progress": task.progress,
                 "status": status,
                 "role": role,
-                "contribution": round(contribution, 1)
+                "contribution": round(contribution, 1),
+                "end_date": end_date_str  # 新增：任务结束日期
             })
             person_tasks[person]["roles"][role] += 1
 
             # 累加 EWL（只累加未完成任务）
             if is_incomplete:
                 person_tasks[person]["ewl_by_role"][role] += contribution
+                # 更新最晚结束日期（只考虑未完成任务）
+                if task.end_date:
+                    current_latest = person_tasks[person]["latest_end_date"]
+                    if current_latest is None or task.end_date > current_latest:
+                        person_tasks[person]["latest_end_date"] = task.end_date
 
         # 收集负责人 (R)
         for person in task.responsible:
@@ -1448,6 +1467,7 @@ async def get_personnel_workload():
         tasks = data["tasks"]
         roles = data["roles"]
         ewl_by_role = data["ewl_by_role"]
+        latest_end_date = data["latest_end_date"]
 
         # 计算总 EWL
         ewl = sum(ewl_by_role.values())
@@ -1467,6 +1487,14 @@ async def get_personnel_workload():
         incomplete_tasks = [t for t in tasks if t["status"] in ("未开始", "进行中")]
         avg_progress = sum(t["progress"] for t in incomplete_tasks) / len(incomplete_tasks) if incomplete_tasks else 0
 
+        # 计算有空日期（最晚结束日期 + 1天）
+        from datetime import timedelta
+        latest_end_date_str = latest_end_date.strftime("%Y-%m-%d") if latest_end_date else None
+        available_date_str = None
+        if latest_end_date:
+            available_date = latest_end_date + timedelta(days=1)
+            available_date_str = available_date.strftime("%Y-%m-%d")
+
         workload_data.append({
             "person_name": person_name,
             "department": personnel_map.get(person_name, ""),
@@ -1477,7 +1505,9 @@ async def get_personnel_workload():
             "tasks": tasks,
             "roles": roles,
             "summary": summary,
-            "avg_progress": round(avg_progress, 1)
+            "avg_progress": round(avg_progress, 1),
+            "latest_end_date": latest_end_date_str,  # 新增：最晚任务结束日期
+            "available_date": available_date_str      # 新增：有空日期
         })
 
     # 按 EWL 降序排列（负荷最重的在前）

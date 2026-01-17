@@ -20,7 +20,7 @@ interface TaskEditDialogProps {
 
 export function TaskEditDialog({ task, isOpen, onClose, onSave, mode }: TaskEditDialogProps) {
   // 获取里程碑列表和任务列表
-  const { milestones, fetchMilestones, tasks } = useTaskStore();
+  const { milestones, fetchMilestones, tasks, shiftTaskNumbers } = useTaskStore();
 
   const [formData, setFormData] = useState<Omit<Task, 'index'>>({
     milestone: '',
@@ -58,6 +58,9 @@ export function TaskEditDialog({ task, isOpen, onClose, onSave, mode }: TaskEdit
 
   // 人员库
   const [personnel, setPersonnel] = useState<Person[]>([]);
+
+  // 插入编号状态
+  const [isShifting, setIsShifting] = useState(false);
 
   // 加载里程碑列表和人员库
   useEffect(() => {
@@ -279,36 +282,77 @@ export function TaskEditDialog({ task, isOpen, onClose, onSave, mode }: TaskEdit
     });
   };
 
-  // 自动生成任务编号
+  // 自动生成任务编号（里程碑序号.里程碑内序号）
   const generateTaskNo = () => {
+    // 必须先选择里程碑
     if (!formData.milestone) {
       alert('请先选择里程碑');
       return;
     }
 
-    // 获取当前里程碑在里程碑列表中的索引（从1开始）
-    const milestoneIndex = milestones.indexOf(formData.milestone) + 1;
-    if (milestoneIndex === 0) return;
+    // 1. 获取当前项目中已使用的里程碑（按 milestones 配置顺序）
+    const usedMilestones = milestones.filter(m =>
+      tasks.some(t => t.milestone === m) || m === formData.milestone
+    );
 
-    // 获取该里程碑下的所有任务编号
-    const milestoneTasks = tasks.filter(t => t.milestone === formData.milestone);
-    const taskNos = milestoneTasks.map(t => t.task_no);
+    // 2. 获取当前里程碑在已使用列表中的序号
+    const milestoneIndex = usedMilestones.indexOf(formData.milestone) + 1;
+    if (milestoneIndex === 0) {
+      alert('里程碑无效');
+      return;
+    }
 
-    // 找出最大的子编号
-    let maxSubNo = 0;
-    const prefix = `${milestoneIndex}.`;
-    taskNos.forEach(no => {
-      if (no.startsWith(prefix)) {
-        const subNo = parseInt(no.substring(prefix.length));
-        if (!isNaN(subNo) && subNo > maxSubNo) {
-          maxSubNo = subNo;
+    // 3. 查找该里程碑下的最大序号
+    let maxSeq = 0;
+    tasks.forEach(t => {
+      if (t.milestone === formData.milestone) {
+        // 解析编号格式: "1.2" -> 提取 "2"
+        const match = t.task_no.match(/^\d+\.(\d+)$/);
+        if (match) {
+          const seq = parseInt(match[1]);
+          if (!isNaN(seq) && seq > maxSeq) {
+            maxSeq = seq;
+          }
         }
       }
     });
 
-    // 生成下一个编号
-    const newTaskNo = `${milestoneIndex}.${maxSubNo + 1}`;
+    // 4. 生成新编号
+    const newTaskNo = `${milestoneIndex}.${maxSeq + 1}`;
     handleChange('task_no', newTaskNo);
+  };
+
+  // 插入编号（顺延后续任务编号）
+  const insertTaskNo = async () => {
+    // 必须先选择里程碑
+    if (!formData.milestone) {
+      alert('请先选择里程碑');
+      return;
+    }
+
+    // 解析当前编号
+    const match = formData.task_no.match(/^(\d+)\.(\d+)$/);
+    if (!match) {
+      alert('请输入有效的编号格式（如 1.2）');
+      return;
+    }
+
+    const seq = parseInt(match[2]);
+
+    // 确认操作
+    if (!confirm(`将在 ${formData.milestone} 里程碑中插入编号 ${formData.task_no}，后续任务编号将顺延。确定继续？`)) {
+      return;
+    }
+
+    setIsShifting(true);
+    try {
+      await shiftTaskNumbers(formData.milestone, seq);
+    } catch (error) {
+      console.error('顺延编号失败:', error);
+      alert('顺延编号失败');
+    } finally {
+      setIsShifting(false);
+    }
   };
 
   // 获取可选的前置任务列表（排除当前任务）
@@ -389,10 +433,21 @@ export function TaskEditDialog({ task, isOpen, onClose, onSave, mode }: TaskEdit
                     type="button"
                     onClick={generateTaskNo}
                     className="px-3 py-1 text-sm bg-gray-100 hover:bg-gray-200 rounded border"
-                    title="自动生成编号"
+                    title="自动生成编号（追加到末尾）"
                   >
                     自动
                   </button>
+                  {mode === 'add' && (
+                    <button
+                      type="button"
+                      onClick={insertTaskNo}
+                      disabled={isShifting}
+                      className="px-3 py-1 text-sm bg-blue-50 hover:bg-blue-100 text-blue-700 rounded border border-blue-200 disabled:opacity-50"
+                      title="插入编号，后续任务编号顺延"
+                    >
+                      {isShifting ? '处理中...' : '插入'}
+                    </button>
+                  )}
                 </div>
               </div>
 

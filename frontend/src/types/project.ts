@@ -9,7 +9,7 @@ export type ProjectStatus = 'active' | 'archived' | 'template';
 export type ScheduleMode = 'forward' | 'backward';
 
 // 项目分类选项
-export const PROJECT_TYPES = ['新产品开发', '特殊定制', '工程项目非标机'] as const;
+export const PROJECT_TYPES = ['新产品开发', '特殊定制', '工程项目非标机', 'HPS'] as const;
 export type ProjectType = typeof PROJECT_TYPES[number] | '';
 
 // 项目数据

@@ -5,6 +5,16 @@
 import { useState, useEffect, useMemo } from 'react';
 import { getPersonnelWorkload } from '../api/tasks';
 import type { PersonnelWorkload, PersonnelWorkloadResponse } from '../types/task';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+  ResponsiveContainer
+} from 'recharts';
 
 interface Props {
   isOpen: boolean;
@@ -134,6 +144,31 @@ export function PersonnelWorkloadDialog({ isOpen, onClose }: Props) {
     }
   };
 
+  // 格式化有空日期显示
+  const formatAvailableDate = (availableDate: string | null) => {
+    if (!availableDate) return '现在有空';
+    const date = new Date(availableDate);
+    const month = date.getMonth() + 1;
+    const day = date.getDate();
+    return `${month}月${day}日后有空`;
+  };
+
+  // 准备图表数据
+  const chartData = useMemo(() => {
+    if (!data) return [];
+    return data.workload_data
+      .filter(w => w.ewl > 0)
+      .slice(0, 10)  // 最多显示前10人
+      .map(w => ({
+        name: w.person_name,
+        R: w.ewl_by_role.R,
+        A: w.ewl_by_role.A,
+        C: w.ewl_by_role.C,
+        I: w.ewl_by_role.I,
+        total: w.ewl
+      }));
+  }, [data]);
+
   if (!isOpen) return null;
 
   return (
@@ -175,6 +210,37 @@ export function PersonnelWorkloadDialog({ isOpen, onClose }: Props) {
                   <div className="text-sm text-gray-600">平均 EWL</div>
                 </div>
               </div>
+
+              {/* 工作负荷图表 */}
+              {chartData.length > 0 && (
+                <div className="mb-6 border rounded-lg p-4">
+                  <h3 className="text-sm font-medium text-gray-700 mb-3">人员工作负荷对比（按角色分解）</h3>
+                  <div style={{ width: '100%', height: 250 }}>
+                    <ResponsiveContainer>
+                      <BarChart
+                        data={chartData}
+                        layout="vertical"
+                        margin={{ top: 5, right: 30, left: 50, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis type="number" unit="天" />
+                        <YAxis type="category" dataKey="name" width={60} tick={{ fontSize: 12 }} />
+                        <Tooltip
+                          formatter={(value) => [`${value}天`]}
+                          labelFormatter={(label) => `${label}`}
+                        />
+                        <Legend
+                          formatter={(value: string) => value === 'R' ? '负责人(R)' : value === 'A' ? '批准人(A)' : value === 'C' ? '咨询人(C)' : '知会人(I)'}
+                        />
+                        <Bar dataKey="R" stackId="a" fill="#3b82f6" name="R" />
+                        <Bar dataKey="A" stackId="a" fill="#ef4444" name="A" />
+                        <Bar dataKey="C" stackId="a" fill="#f59e0b" name="C" />
+                        <Bar dataKey="I" stackId="a" fill="#10b981" name="I" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
 
               {/* 筛选条件 */}
               <div className="flex gap-4 mb-4">
@@ -253,6 +319,10 @@ export function PersonnelWorkloadDialog({ isOpen, onClose }: Props) {
                                       <span className="font-medium">{person.person_name}</span>
                                       <span className="text-sm font-semibold text-orange-600">
                                         EWL: {person.ewl}天
+                                      </span>
+                                      {/* 有空日期 */}
+                                      <span className={`text-xs px-2 py-0.5 rounded ${person.available_date ? 'bg-blue-50 text-blue-600' : 'bg-green-50 text-green-600'}`}>
+                                        {formatAvailableDate(person.available_date)}
                                       </span>
                                     </div>
 

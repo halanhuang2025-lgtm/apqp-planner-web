@@ -44,9 +44,11 @@ function App() {
     addTask,
     updateTask,
     deleteTask,
+    clearAllTasks,
     moveTask,
     toggleExclude,
     calculateSchedule,
+    renumberAllTasks,
   } = useTaskStore();
 
   const {
@@ -570,6 +572,28 @@ function App() {
                 disabled={selectedIndices.length !== 1}
               >
                 删除任务
+              </button>
+              <button
+                className="btn btn-secondary text-sm py-1 text-red-600 hover:bg-red-50"
+                onClick={() => {
+                  if (confirm('确定要清空所有任务吗？此操作不可撤销。')) {
+                    clearAllTasks();
+                  }
+                }}
+                disabled={tasks.length === 0}
+              >
+                清空任务
+              </button>
+              <button
+                className="btn btn-secondary text-sm py-1"
+                onClick={() => {
+                  if (confirm('确定要重新编码所有任务吗？将按里程碑顺序重新分配编号。')) {
+                    renumberAllTasks();
+                  }
+                }}
+                disabled={tasks.length === 0}
+              >
+                重新编码
               </button>
               <button
                 className="btn btn-secondary text-sm py-1"

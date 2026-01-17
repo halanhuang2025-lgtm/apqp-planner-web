@@ -2,9 +2,42 @@
  * 项目总览页面 - 支持分类统计和分组显示
  */
 
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 import { useProjectStore } from '../stores/projectStore';
 import type { Project } from '../types/project';
+import type { PersonnelWorkloadResponse } from '../types/task';
+import { getPersonnelWorkload } from '../api/tasks';
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  Cell,
+  PieChart,
+  Pie,
+  Legend
+} from 'recharts';
+
+// 图表颜色常量
+const CHART_COLORS = {
+  completed: '#22c55e',
+  nearComplete: '#3b82f6',
+  inProgress: '#f59e0b',
+  justStarted: '#f97316',
+  notStarted: '#9ca3af'
+};
+
+// 获取进度条颜色
+const getBarColor = (progress: number): string => {
+  if (progress >= 100) return CHART_COLORS.completed;
+  if (progress >= 80) return CHART_COLORS.nearComplete;
+  if (progress >= 50) return CHART_COLORS.inProgress;
+  if (progress >= 20) return CHART_COLORS.justStarted;
+  return CHART_COLORS.notStarted;
+};
 
 interface ProjectOverviewProps {
   isOpen: boolean;
@@ -36,18 +69,67 @@ export function ProjectOverview({ isOpen, onClose, onSwitchProject }: ProjectOve
 
   const [collapsedCategories, setCollapsedCategories] = useState<Set<string>>(new Set());
 
+  // 人员负荷数据
+  const [workloadData, setWorkloadData] = useState<PersonnelWorkloadResponse | null>(null);
+
+  // 筛选活跃项目 - 放在所有 hooks 之前
+  const activeProjects = useMemo(() => projects.filter(p => p.status === 'active'), [projects]);
+  const archivedProjects = useMemo(() => projects.filter(p => p.status === 'archived'), [projects]);
+
+  // 准备项目进度柱状图数据
+  const projectProgressData = useMemo(() => {
+    if (activeProjects.length === 0) return [];
+    return [...activeProjects]
+      .sort((a, b) => b.completion_rate - a.completion_rate)
+      .slice(0, 10)
+      .map(p => ({
+        name: p.name.length > 20 ? p.name.substring(0, 20) + '..' : p.name,
+        progress: Math.round(p.completion_rate || 0)
+      }));
+  }, [activeProjects]);
+
+  // 准备状态分布饼图数据
+  const statusDistributionData = useMemo(() => {
+    if (activeProjects.length === 0) return [];
+    const completed = activeProjects.filter(p => (p.completion_rate || 0) >= 100).length;
+    const nearComplete = activeProjects.filter(p => (p.completion_rate || 0) >= 80 && (p.completion_rate || 0) < 100).length;
+    const inProgress = activeProjects.filter(p => (p.completion_rate || 0) >= 20 && (p.completion_rate || 0) < 80).length;
+    const justStarted = activeProjects.filter(p => (p.completion_rate || 0) > 0 && (p.completion_rate || 0) < 20).length;
+    const notStarted = activeProjects.filter(p => (p.completion_rate || 0) === 0).length;
+
+    return [
+      { name: '已完成', value: completed, color: CHART_COLORS.completed },
+      { name: '即将完成', value: nearComplete, color: CHART_COLORS.nearComplete },
+      { name: '进行中', value: inProgress, color: CHART_COLORS.inProgress },
+      { name: '刚启动', value: justStarted, color: CHART_COLORS.justStarted },
+      { name: '未开始', value: notStarted, color: CHART_COLORS.notStarted },
+    ].filter(item => item.value > 0);
+  }, [activeProjects]);
+
   useEffect(() => {
     if (isOpen) {
       fetchProjects();
       fetchCategories();
+      // 加载人员负荷数据
+      getPersonnelWorkload().then(setWorkloadData).catch(console.error);
     }
   }, [isOpen, fetchProjects, fetchCategories]);
 
-  if (!isOpen) return null;
-
-  // 筛选活跃项目
-  const activeProjects = projects.filter(p => p.status === 'active');
-  const archivedProjects = projects.filter(p => p.status === 'archived');
+  // 准备人员负荷图表数据（前5名）
+  const workloadChartData = useMemo(() => {
+    if (!workloadData) return [];
+    return workloadData.workload_data
+      .filter(w => w.ewl > 0)
+      .slice(0, 5)
+      .map(w => ({
+        name: w.person_name,
+        R: w.ewl_by_role.R,
+        A: w.ewl_by_role.A,
+        C: w.ewl_by_role.C,
+        I: w.ewl_by_role.I,
+        total: w.ewl
+      }));
+  }, [workloadData]);
 
   // 根据分类筛选
   const filteredActiveProjects = categoryFilter
@@ -217,9 +299,11 @@ export function ProjectOverview({ isOpen, onClose, onSwitchProject }: ProjectOve
     );
   };
 
+  if (!isOpen) return null;
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
-      <div className="bg-white rounded-lg shadow-xl w-[1000px] max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={onClose}>
+      <div className="bg-white rounded-lg shadow-xl w-[1000px] max-h-[90vh] flex flex-col" onClick={e => e.stopPropagation()}>
         {/* 标题栏 */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-gray-200">
           <h2 className="text-lg font-bold text-gray-900">项目总览</h2>
@@ -260,6 +344,112 @@ export function ProjectOverview({ isOpen, onClose, onSwitchProject }: ProjectOve
                   <div className="text-orange-100 text-sm">总任务数</div>
                 </div>
               </div>
+
+              {/* 可视化图表区域 */}
+              {projectProgressData.length > 0 && (
+                <div className="grid grid-cols-3 gap-4 mb-6">
+                  {/* 项目进度柱状图 */}
+                  <div className="col-span-2 border rounded-lg p-4">
+                    <h3 className="text-sm font-bold text-gray-700 mb-3">项目进度对比</h3>
+                    <div style={{ width: '100%', height: 220 }}>
+                      <ResponsiveContainer width="100%" height="100%">
+                        <BarChart
+                          data={projectProgressData}
+                          layout="vertical"
+                          margin={{ top: 5, right: 30, left: 5, bottom: 5 }}
+                        >
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis type="number" domain={[0, 100]} unit="%" />
+                          <YAxis type="category" dataKey="name" width={150} tick={{ fontSize: 11 }} />
+                          <Tooltip />
+                          <Bar dataKey="progress" name="进度" barSize={14}>
+                            {projectProgressData.map((entry, index) => (
+                              <Cell key={`bar-${index}`} fill={getBarColor(entry.progress)} />
+                            ))}
+                          </Bar>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  {/* 状态分布饼图 */}
+                  {statusDistributionData.length > 0 && (
+                    <div className="border rounded-lg p-4">
+                      <h3 className="text-sm font-bold text-gray-700 mb-3">状态分布</h3>
+                      <div style={{ width: '100%', height: 220 }}>
+                        <ResponsiveContainer width="100%" height="100%">
+                          <PieChart>
+                            <Pie
+                              data={statusDistributionData}
+                              cx="50%"
+                              cy="50%"
+                              innerRadius={35}
+                              outerRadius={65}
+                              paddingAngle={2}
+                              dataKey="value"
+                              nameKey="name"
+                            >
+                              {statusDistributionData.map((entry, index) => (
+                                <Cell key={`pie-${index}`} fill={entry.color} />
+                              ))}
+                            </Pie>
+                            <Tooltip />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                      {/* 图例 */}
+                      <div className="flex flex-wrap justify-center gap-2 mt-2">
+                        {statusDistributionData.map((item, index) => (
+                          <div key={index} className="flex items-center gap-1 text-xs">
+                            <div className="w-2.5 h-2.5 rounded-full" style={{ backgroundColor: item.color }} />
+                            <span>{item.name}: {item.value}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* 人员负荷图表 */}
+              {workloadChartData.length > 0 && (
+                <div className="mb-6 border rounded-lg p-4">
+                  <div className="flex items-center justify-between mb-3">
+                    <h3 className="text-sm font-bold text-gray-700">人员工作负荷 TOP5</h3>
+                    {workloadData && (
+                      <div className="flex items-center gap-4 text-xs text-gray-500">
+                        <span>参与人数: <span className="font-medium text-blue-600">{workloadData.total_personnel}</span></span>
+                        <span>总EWL: <span className="font-medium text-orange-600">{workloadData.total_ewl}天</span></span>
+                        <span>平均: <span className="font-medium text-purple-600">{workloadData.avg_ewl}天</span></span>
+                      </div>
+                    )}
+                  </div>
+                  <div style={{ width: '100%', height: 180 }}>
+                    <ResponsiveContainer>
+                      <BarChart
+                        data={workloadChartData}
+                        layout="vertical"
+                        margin={{ top: 5, right: 30, left: 50, bottom: 5 }}
+                      >
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis type="number" unit="天" />
+                        <YAxis type="category" dataKey="name" width={60} tick={{ fontSize: 11 }} />
+                        <Tooltip formatter={(value) => [`${value}天`]} />
+                        <Legend
+                          formatter={(value: string) =>
+                            value === 'R' ? '负责人' : value === 'A' ? '批准人' : value === 'C' ? '咨询人' : '知会人'
+                          }
+                          wrapperStyle={{ fontSize: '11px' }}
+                        />
+                        <Bar dataKey="R" stackId="a" fill="#3b82f6" name="R" />
+                        <Bar dataKey="A" stackId="a" fill="#ef4444" name="A" />
+                        <Bar dataKey="C" stackId="a" fill="#f59e0b" name="C" />
+                        <Bar dataKey="I" stackId="a" fill="#10b981" name="I" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              )}
 
               {/* 分类统计面板 */}
               {categoryStats.length > 0 && (

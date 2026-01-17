@@ -38,6 +38,12 @@ export const deleteTask = async (index: number): Promise<void> => {
   await api.delete(`/api/tasks/${index}`);
 };
 
+// 清空所有任务
+export const clearAllTasks = async (): Promise<{ message: string }> => {
+  const response = await api.delete('/api/tasks');
+  return response.data;
+};
+
 // 上移/下移任务
 export const reorderTask = async (index: number, direction: 'up' | 'down'): Promise<{ new_index: number }> => {
   const response = await api.post('/api/tasks/reorder', null, {

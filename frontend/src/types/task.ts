@@ -92,6 +92,7 @@ export interface PersonnelWorkloadTask {
   status: string;
   role: 'R' | 'A' | 'C' | 'I';
   contribution: number;  // 该任务贡献的 EWL
+  end_date: string | null;  // 任务结束日期
 }
 
 export interface EwlByRole {
@@ -122,6 +123,8 @@ export interface PersonnelWorkload {
     paused: number;
   };
   avg_progress: number;
+  latest_end_date: string | null;  // 最晚任务结束日期
+  available_date: string | null;   // 有空日期
 }
 
 export interface PersonnelWorkloadResponse {
