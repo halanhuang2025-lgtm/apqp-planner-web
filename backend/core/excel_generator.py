@@ -514,18 +514,20 @@ class ExcelGenerator:
             header_cell.fill = self.header_fill
             header_cell.alignment = self.center_align
             header_cell.border = self.thin_border
-            ws.column_dimensions[get_column_letter(progress_col)].width = 28
+            ws.column_dimensions[get_column_letter(progress_col)].width = 35
 
             # 填充每个任务的最近进度记录
             task_row = 6
             for task in tasks:
-                recent_records = self._get_recent_records_summary(progress_manager, task.task_no, limit=3)
+                recent_records = self._get_recent_records_summary(progress_manager, task.task_no, limit=5)
                 if recent_records:
                     summary_lines = []
                     for r in recent_records:
                         date_str = r.record_date.strftime('%m-%d') if hasattr(r.record_date, 'strftime') else str(r.record_date)[:5]
-                        note_preview = r.note[:8] + "..." if r.note and len(r.note) > 8 else (r.note or "")
-                        summary_lines.append(f"{date_str}: {r.progress}% {note_preview}")
+                        increment = getattr(r, 'increment', 0)
+                        increment_str = f"+{increment}" if increment > 0 else str(increment)
+                        note_preview = r.note[:15] + "..." if r.note and len(r.note) > 15 else (r.note or "")
+                        summary_lines.append(f"{date_str}: {r.progress}%({increment_str}) {note_preview}")
 
                     summary_text = "\n".join(summary_lines)
                 else:
@@ -662,9 +664,9 @@ class ExcelGenerator:
         # 创建任务名称查找字典
         task_names = {task.task_no: task.name for task in tasks}
 
-        # 表头
-        headers = ["任务编号", "任务名称", "记录日期", "完成进度", "状态", "备注", "问题"]
-        header_widths = [10, 30, 12, 10, 10, 30, 30]
+        # 表头（增加当日增量列）
+        headers = ["任务编号", "任务名称", "记录日期", "完成进度", "当日增量", "状态", "备注", "问题"]
+        header_widths = [10, 30, 12, 10, 10, 10, 40, 40]
 
         for col, (header, width) in enumerate(zip(headers, header_widths), start=1):
             cell = ws.cell(row=1, column=col, value=header)
@@ -708,23 +710,38 @@ class ExcelGenerator:
             cell_d.alignment = self.center_align
             cell_d.border = self.thin_border
 
-            # 状态
-            cell_e = ws.cell(row=row, column=5, value=record.status.value)
+            # 当日增量
+            increment = getattr(record, 'increment', 0)
+            increment_str = f"+{increment}%" if increment > 0 else f"{increment}%"
+            cell_e = ws.cell(row=row, column=5, value=increment_str)
             cell_e.font = self.normal_font
             cell_e.alignment = self.center_align
             cell_e.border = self.thin_border
+            # 增量为正显示绿色，为负显示红色，为0显示橙色
+            if increment > 0:
+                cell_e.font = Font(name="微软雅黑", size=10, color="27AE60")
+            elif increment < 0:
+                cell_e.font = Font(name="微软雅黑", size=10, color="E74C3C")
+            else:
+                cell_e.font = Font(name="微软雅黑", size=10, color="F39C12")
 
-            # 备注
-            cell_f = ws.cell(row=row, column=6, value=record.note or "")
+            # 状态
+            cell_f = ws.cell(row=row, column=6, value=record.status.value if hasattr(record.status, 'value') else str(record.status))
             cell_f.font = self.normal_font
-            cell_f.alignment = self.left_align
+            cell_f.alignment = self.center_align
             cell_f.border = self.thin_border
 
-            # 问题
-            cell_g = ws.cell(row=row, column=7, value=record.issues or "")
+            # 备注
+            cell_g = ws.cell(row=row, column=7, value=record.note or "")
             cell_g.font = self.normal_font
             cell_g.alignment = self.left_align
             cell_g.border = self.thin_border
+
+            # 问题
+            cell_h = ws.cell(row=row, column=8, value=record.issues or "")
+            cell_h.font = self.normal_font
+            cell_h.alignment = self.left_align
+            cell_h.border = self.thin_border
 
             ws.row_dimensions[row].height = 22
 
